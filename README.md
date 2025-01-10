@@ -1,5 +1,4 @@
-# coastal-conservation
-Assessing Range Shifts of Coastal Species to Inform Conservation in California’s Biogeographic Transition Zones
+# Assessing Range Shifts of Coastal Species to Inform Conservation in California’s Biogeographic Transition Zones
 
 ## Overview
 This project will inform a strategic conservation plan for monitoring and preserving biodiversity under climate change within the Dangermond Preserve. 
