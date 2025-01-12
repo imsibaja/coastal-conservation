@@ -50,3 +50,6 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Desktop Services Store
+.DS_Store
