@@ -1,0 +1,114 @@
+---
+title: "Initial MARINe species data cleaning and exploration"
+format: html
+author: "Jordan Sibley"
+date: last-modified
+---
+
+## Set Up
+
+```{r}
+# Load packages 
+library(tidyverse)
+library(here)
+library(readxl)
+
+```
+
+## Data 
+
+```{r}
+# Read in three excel files from MARINe biodiversity data 
+point_contact_raw <- read_excel(here('data', 'cbs_data_CA_2023.xlsx'), sheet = 'point_contact_summary_data')
+quadrat_raw <- read_excel(here('data', 'cbs_data_CA_2023.xlsx'), sheet = 'quadrat_summary_data')
+swath_raw <- read_excel(here('data', 'cbs_data_CA_2023.xlsx'), sheet = 'swath_summary_data')
+```
+
+
+## Data Cleaning Plan
+
+Notes on what Erica coded:
+
+-   Read in `point_contact_summary_data`, `quadrat_summary_data`, and `swath_summary_data` from the excel file under `MARINe_biodiversity_data` folder.
+
+-   Remove species lumps that aren't of focus
+
+-   Filter to `Mainland` to exclude the islands
+
+-   Create present or absent category of `total_counts` column (\> 0 is now 1)
+
+-   Join 3 data frames into 1
+
+-   Group by `marine_site_name`, `latitude`, `longitude`, and `species_lump` and then convert `total_counts` to be 1 (if sum is greater than one)
+
+-   Northern threshold of latitude = 34.4
+
+-   Southern threshold of latitude = 34.9
+
+**My plan to streamline this process**
+
+For `point_contact_summary_data`:
+
+-   remove columns: `number_of_transect_locations`, `percent_cover`
+-   Rename `number_of_hits` to be `total_count`
+
+For `quadrat_summary_data`:
+
+-   remove columns: `number_of_quadrats_sampled`, `total_area_sampled_m2`, `density_per_m2`
+
+For `swath_summary_data`:
+
+-   remove columns: `number_of_transects_sampled`, `est_swath_area_searched_m2`, `density_per_m2`
+
+For all three:
+
+-   Create data collection source (`point contact`, `quadrat`, `swath`)
+-   Filter to `Mainland`
+-   Remove species lumps that aren't of focus
+
+Join the three datasets together
+
+## Data Cleaning 
+```{r}
+# Clean point_contact dataset 
+point_contact_clean <- point_contact_raw %>% 
+  # Remove non-matching columns 
+  select(!c('number_of_transect_locations', 'percent_cover')) %>% 
+  # Rename num of hits to total count 
+  rename(total_count = number_of_hits) %>% 
+  # Create new data collection source column 
+  mutate(collection_source = "point contact") %>% 
+  # Filter to mainland only 
+  filter(island == "Mainland") %>% 
+  # Remove certain species lumps 
+  filter(!species_lump %in% c("Rock", "Sand", "Tar", "Blue Green Algae", "Red Crust", "Diatom", "Ceramiales"))
+
+# Clean quadrat dataset 
+quadrat_clean <- quadrat_raw %>% 
+  # Remove non-matching columns 
+  select(!c('number_of_quadrats_sampled', 'total_area_sampled_m2', 'density_per_m2')) %>% 
+  # Create new data collection source column 
+  mutate(collection_source = "quadrat") %>% 
+  # Filter to mainland only 
+  filter(island == "Mainland") %>% 
+  # Remove certain species lumps 
+  filter(!species_lump %in% c("Rock", "Sand", "Tar", "Blue Green Algae", "Red Crust", "Diatom", "Ceramiales"))
+
+# Clean swath dataset 
+swath_clean <- swath_raw %>% 
+  # Remove non-matching columns 
+  select(!c('number_of_transects_sampled', 'est_swath_area_searched_m2',  'density_per_m2')) %>% 
+  # Create new data collection source column 
+  mutate(collection_source = "swath") %>% 
+  # Filter to mainland only 
+  filter(island == "Mainland") %>% 
+  # Remove certain species lumps 
+  filter(!species_lump %in% c("Rock", "Sand", "Tar", "Blue Green Algae", "Red Crust", "Diatom", "Ceramiales"))
+```
+
+
+#### Merge datasets 
+```{r}
+
+```
+
