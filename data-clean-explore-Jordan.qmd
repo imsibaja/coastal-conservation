@@ -12,7 +12,6 @@ date: last-modified
 library(tidyverse)
 library(here)
 library(readxl)
-
 ```
 
 ## Data 
@@ -68,6 +67,8 @@ For all three:
 
 Join the three datasets together
 
+While Erica did not separate by year, I feel it would be valuable to separate the lat long and species by the year so that you can see the species range of the year.  
+
 ## Data Cleaning 
 ```{r}
 # Clean point_contact dataset 
@@ -108,7 +109,76 @@ swath_clean <- swath_raw %>%
 
 
 #### Merge datasets 
+
+Since all three datasets have the same columns, I will merge the datasets into one using the dpylr function `bind_rows`
 ```{r}
+# Merge the 3 dataset together 
+biodiv_merge <- bind_rows(point_contact_clean, quadrat_clean, swath_clean)
+```
+
+#### Group by site, species, (and year?)  
+```{r}
+# Group by site species and year 
+biodiv_grouped <- biodiv_merge %>% 
+  group_by(marine_site_name, latitude, longitude, species_lump, year) %>% 
+  summarise(num_count = sum(total_count))
+```
+
+- This leaves a total of 101,577 rows (from an orginal 102,522 rows)
+- From 2000 to 2023 
+- Could I consider combining my year blocks (every 5 years?)
+
+Just to see, lets group by and not include year, that way we get the total range from the year 2000 to 2023 
+
+```{r}
+# Group by site and species (no year)
+biodiv_total <- biodiv_merge %>% 
+  group_by(marine_site_name, latitude, longitude, species_lump) %>% 
+  summarise(num_count = sum(total_count))
+```
+
+Rows = 39,413
+
+For the data exploration, I will use this data since there are less rows. 
+
+#### Create present or not present column 
+```{r}
+# Create column to indicate presence/absence
+biodiv_total <- biodiv_total %>% 
+  mutate(presence = ifelse(num_count >= 1, 1, 0))
+```
+
+
+## Point Conception Latitude Buffer 
+```{r}
+# Create north and south threshold 0.5 degrees around Point Conception 
+north_bound <- 34.4 
+south_bound <- 34.9 
 
 ```
 
+Need to figure out way to determine which species have a range edge in the preserve. 
+
+1. Southern Range Edge: Present below the south bound, present within the preserve, and absent above the north bound.
+2. Northern Range Edge: Present above the north bound, present within the preserve, and absent below the south bound.
+3. Continuous Presence: Present within the preserve, below the south bound, and above the north bound.
+
+```{r}
+# Classify species by range edge category
+range_edge_categories <- biodiv_total %>%
+  summarize(
+    present_below_south = any(latitude < south_bound & presence == 1),
+    present_within_buffer = any(latitude >= south_bound & latitude <= north_bound & presence == 1),
+    present_above_north = any(latitude > north_bound & presence == 1)
+  ) %>%
+  mutate(
+    range_edge_category = case_when(
+      present_below_south & present_within_buffer & !present_above_north ~ "Southern Species Range Edge",
+      present_above_north & present_within_buffer & !present_below_south ~ "Northern Species Range Edge",
+      present_below_south & present_within_buffer & present_above_north ~ "Continuous Presence",
+      TRUE ~ "Other"
+    )
+  )
+```
+
+Currently, all of the results are Other. Need to trouble shoot to figure out what could be wrong. A smart way to do this could be to filter to only 2 or 3 species, look up their known ranges and examine the latitudes they are sampled at. Retry this range classification and determine what went wrong. 
