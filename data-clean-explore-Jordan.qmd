@@ -12,6 +12,9 @@ date: last-modified
 library(tidyverse)
 library(here)
 library(readxl)
+library(spData)
+library(sf)
+library(tmap)
 ```
 
 ## Data 
@@ -21,6 +24,14 @@ library(readxl)
 point_contact_raw <- read_excel(here('data', 'cbs_data_CA_2023.xlsx'), sheet = 'point_contact_summary_data')
 quadrat_raw <- read_excel(here('data', 'cbs_data_CA_2023.xlsx'), sheet = 'quadrat_summary_data')
 swath_raw <- read_excel(here('data', 'cbs_data_CA_2023.xlsx'), sheet = 'swath_summary_data')
+
+# Read in Dangermond preserve shape file 
+dangermond <- read_sf(here('data', 'dangermond_shapefile', 'jldp_boundary.shp'))
+
+# Read in California state boundary 
+california <- spData::us_states %>% 
+  filter(NAME == "California")
+
 ```
 
 
@@ -119,14 +130,14 @@ biodiv_merge <- bind_rows(point_contact_clean, quadrat_clean, swath_clean)
 #### Group by site, species, (and year?)  
 ```{r}
 # Group by site species and year 
-biodiv_grouped <- biodiv_merge %>% 
-  group_by(marine_site_name, latitude, longitude, species_lump, year) %>% 
-  summarise(num_count = sum(total_count))
+# biodiv_grouped <- biodiv_merge %>% 
+#   group_by(marine_site_name, latitude, longitude, species_lump, year) %>% 
+#   summarise(num_count = sum(total_count))
 ```
 
 - This leaves a total of 101,577 rows (from an orginal 102,522 rows)
 - From 2000 to 2023 
-- Could I consider combining my year blocks (every 5 years?)
+- I could consider combining my year blocks (every 5 years?)
 
 Just to see, lets group by and not include year, that way we get the total range from the year 2000 to 2023 
 
@@ -182,3 +193,141 @@ range_edge_categories <- biodiv_total %>%
 ```
 
 Currently, all of the results are Other. Need to trouble shoot to figure out what could be wrong. A smart way to do this could be to filter to only 2 or 3 species, look up their known ranges and examine the latitudes they are sampled at. Retry this range classification and determine what went wrong. 
+
+
+## Map of California with Dangermond Preserve 
+
+Goal for this visualization is to create a map of California with the preserve highlighted. Could be used to visualize the species ranges.  
+
+```{r}
+# Convert to WGS84 to lat long
+california <- st_transform(california, crs = 4326)
+dangermond <- st_transform(dangermond, crs = 4326)
+
+# check that the coordinate reference systems match 
+if(st_crs(california) == st_crs(dangermond)) {
+  print("The coordinate reference systems match")
+} else {
+  print("The coordinate reference systems do NOT match. Transformation of CRS is recommended.")
+}
+```
+
+```{r}
+# Map of California with preserve highlighted 
+tm_shape(california) +
+  tm_borders() + 
+tm_shape(dangermond) + 
+  tm_polygons(col = 'red') + 
+tm_credits("Dangermond Preserve", 
+           position = c(0.41, 0.22),
+           size = 0.7)
+```
+
+
+What can be helpful: 
+
+- Create bounding box that is more closely focused on the preserve 
+- Pick a few species to map their presence (remove `presence` = 0)
+- Check if I need to turn the lat long columns into a geometry column
+
+```{r}
+# Create bounding box for closer to preserve 
+bbox_sb <- st_bbox(c(xmin = -121.835697,
+                     xmax = -118.597476,
+                     ymax = 35.544274,
+                     ymin = 33.514814))
+
+# Map with SB bounding box 
+tm_shape(california, bbox = bbox_sb) +
+  tm_borders() + 
+tm_shape(dangermond) + 
+  tm_polygons(col = 'red')
+```
+
+Ok map is not showing up. Something is definitely wrong with the lat long of the california and preserve data
+
+
+#### Convert biodiv data to sf object 
+```{r}
+biodiv_geo <- biodiv_total %>% 
+  st_as_sf(coords = c("longitude", "latitude"), crs = st_crs(dangermond), remove = FALSE)
+
+# Check that the crs matches 
+if(st_crs(california) == st_crs(biodiv_geo)) {
+  print("The coordinate reference systems match")
+} else {
+  print("The coordinate reference systems do NOT match. Transformation of CRS is recommended.")
+}
+
+# Convert to WGS84 
+#biodiv_geo <- st_transform(biodiv_geo, crs = 4326)
+```
+
+
+### California mussel 
+```{r}
+# Filter to cal mussel species to potentially use (for some reason it keeps getting wrong latitudes, might not use)
+mussel_present <- biodiv_geo %>% 
+  filter(species_lump == "Mytilus californianus") %>% 
+  filter(presence == 1)
+
+mussel_absent <- biodiv_geo %>% 
+  filter(species_lump == "Mytilus californianus") %>% 
+  filter(presence == 0)
+```
+
+### Map of mussels present and absent 
+```{r}
+tm_shape(california) +
+  tm_borders() +
+tm_shape(mussel_present) + 
+  tm_dots(col = "blue", 
+          size = 0.15, 
+          alpha = 0.6) +
+tm_shape(mussel_absent) + # mussels absent
+  tm_dots(col = 'red',
+          size = 0.15,
+          alpha = 0.6)
+```
+
+
+
+### Map mussel distribution near preserve 
+```{r}
+# Create a sf objec for the buffer lines
+buffer_lines <- st_sfc(
+  st_linestring(rbind(c(-125, 34.4), c(-115, 34.4))), # north bound
+  st_linestring(rbind(c(-125, 34.9), c(-115, 34.9)))  # south bound
+) %>% 
+  st_set_crs(4326) # Set to WGS84
+
+
+tm_shape(california, bbox = bbox_sb) +
+  tm_polygons(col = "#bae4b3") + # land color 
+tm_shape(dangermond) +
+  tm_polygons(col = "orange") +
+tm_shape(mussel_present) + # mussels present
+  tm_dots(col = "blue", 
+          size = 0.15, 
+          alpha = 0.6) +
+tm_shape(mussel_absent) + # mussels absent
+  tm_dots(col = 'firebrick',
+          size = 0.15,
+          alpha = 0.6) + 
+  tm_shape(buffer_lines) +
+  tm_lines(col = "grey", lwd = 2, lty = "dashed") + # Add buffer lines
+tm_add_legend(type = "symbol",  # add legend for dots 
+              labels = "Species present", 
+              col = "blue") + 
+tm_credits("Dangermond Preserve", # preserve label 
+           position = c(0.45, 0.5)) +
+tm_scale_bar(position = c(0.02, 0.02), width = 0.2) + # scale bar
+tm_compass(position = c(0.01, 0.08), text.size = 0.8) + # compass
+tm_layout(bg.color = "#daf0ff", # background ocean color 
+          main.title = "M.californianus surveyed by MARINe (2000-2023)",
+          fontfamily = "serif",
+          legend.position = c("left", "top"),
+          legend.frame = TRUE)
+```
+
+
