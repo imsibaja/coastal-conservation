@@ -166,6 +166,7 @@ biodiv_total <- biodiv_total %>%
 north_bound <- 34.4 
 south_bound <- 34.9 
 
+# Confirm that these are the correct lats for the buffer with Erica 
 ```
 
 Need to figure out way to determine which species have a range edge in the preserve. 
@@ -221,6 +222,8 @@ tm_shape(dangermond) +
 tm_credits("Dangermond Preserve", 
            position = c(0.41, 0.22),
            size = 0.7)
+
+# save this one 
 ```
 
 
@@ -244,7 +247,6 @@ tm_shape(dangermond) +
   tm_polygons(col = 'red')
 ```
 
-Ok map is not showing up. Something is definitely wrong with the lat long of the california and preserve data
 
 
 #### Convert biodiv data to sf object 
@@ -288,6 +290,8 @@ tm_shape(mussel_absent) + # mussels absent
   tm_dots(col = 'red',
           size = 0.15,
           alpha = 0.6)
+
+# Add legend 
 ```
 
 
