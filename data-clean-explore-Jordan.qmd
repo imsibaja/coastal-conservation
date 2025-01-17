@@ -3,6 +3,8 @@ title: "Initial MARINe species data cleaning and exploration"
 format: html
 author: "Jordan Sibley"
 date: last-modified
+editor_options: 
+  chunk_output_type: console
 ---
 
 ## Set Up
@@ -34,6 +36,7 @@ california <- spData::us_states %>%
 
 ```
 
+Dangermond shape file: https://dangermondpreserve-tnc.hub.arcgis.com/datasets/54ca8cdd3a0b4822b5f728ba34ca01f2_2/explore
 
 ## Data Cleaning Plan
 
@@ -178,22 +181,27 @@ Need to figure out way to determine which species have a range edge in the prese
 ```{r}
 # Classify species by range edge category
 range_edge_categories <- biodiv_total %>%
+    group_by(species_lump) %>%
   summarize(
-    present_below_south = any(latitude < south_bound & presence == 1),
-    present_within_buffer = any(latitude >= south_bound & latitude <= north_bound & presence == 1),
-    present_above_north = any(latitude > north_bound & presence == 1)
+    present_below_south = any(latitude < south_bound & presence==1),
+    present_within_buffer = any(latitude >= north_bound & presence==1) & 
+        any(latitude >= south_bound & presence ==1),
+    present_above_north = any(latitude > north_bound & presence==1)
   ) %>%
   mutate(
     range_edge_category = case_when(
-      present_below_south & present_within_buffer & !present_above_north ~ "Southern Species Range Edge",
+      !present_above_north & present_within_buffer & present_below_south ~ "Southern Species Range Edge",
       present_above_north & present_within_buffer & !present_below_south ~ "Northern Species Range Edge",
-      present_below_south & present_within_buffer & present_above_north ~ "Continuous Presence",
-      TRUE ~ "Other"
+      present_above_north & present_within_buffer & present_below_south ~ "Continuous Presence",
+      present_above_north & !present_within_buffer & present_below_south ~ "Avoidant Presence",
+      !present_above_north & !present_within_buffer & present_below_south ~ "Southern Only Presence",      
+      present_above_north & !present_within_buffer & !present_below_south ~ "Northern Only Presence",
+      !present_above_north & present_within_buffer & !present_below_south ~ "Dangermond Endemic Presence",
+      TRUE ~ "Absent Species"
     )
   )
 ```
 
-Currently, all of the results are Other. Need to trouble shoot to figure out what could be wrong. A smart way to do this could be to filter to only 2 or 3 species, look up their known ranges and examine the latitudes they are sampled at. Retry this range classification and determine what went wrong. 
 
 
 ## Map of California with Dangermond Preserve 
@@ -280,8 +288,16 @@ mussel_absent <- biodiv_geo %>%
 
 ### Map of mussels present and absent 
 ```{r}
+# california base map
 tm_shape(california) +
   tm_borders() +
+# dangermond preserve 
+tm_shape(dangermond) + 
+  tm_polygons(col = 'red') + 
+tm_credits("Dangermond Preserve", 
+           position = c(0.41, 0.22),
+           size = 0.7) + 
+# mussel distribution 
 tm_shape(mussel_present) + 
   tm_dots(col = "blue", 
           size = 0.15, 
@@ -289,9 +305,20 @@ tm_shape(mussel_present) +
 tm_shape(mussel_absent) + # mussels absent
   tm_dots(col = 'red',
           size = 0.15,
-          alpha = 0.6)
+          alpha = 0.6) + 
+  
+tm_add_legend(type = "symbol",  # add legend for dots 
+              labels = "Species present", 
+              col = "blue") + 
+tm_add_legend(type = "symbol",  # add legend for dots 
+              labels = "Species absent", 
+              col = "red") + 
+tm_layout(main.title = "M.californianus CA distribution",
+          fontfamily = "serif",
+          legend.position = c("right", "top"),
+          legend.frame = TRUE)
 
-# Add legend 
+
 ```
 
 
