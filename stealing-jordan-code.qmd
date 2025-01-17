@@ -184,20 +184,34 @@ range_edge_categories <- biodiv_total %>%
     group_by(species_lump) %>%
   summarize(
     present_below_south = any(latitude < south_bound & presence==1),
-    present_within_buffer = any(latitude >= north_bound & presence==1) & 
-        any(latitude >= south_bound & presence ==1),
+    present_within_buffer = any(latitude >= south_bound & presence == 1) &
+        any(latitude <= north_bound & presence == 1),
     present_above_north = any(latitude > north_bound & presence==1)
   ) %>%
   mutate(
     range_edge_category = case_when(
-      !present_above_north & present_within_buffer & present_below_south ~ "Southern Species Range Edge",
-      present_above_north & present_within_buffer & !present_below_south ~ "Northern Species Range Edge",
-      present_above_north & present_within_buffer & present_below_south ~ "Continuous Presence",
-      present_above_north & !present_within_buffer & present_below_south ~ "Avoidant Presence",
-      !present_above_north & !present_within_buffer & present_below_south ~ "Southern Only Presence",      
-      present_above_north & !present_within_buffer & !present_below_south ~ "Northern Only Presence",
-      !present_above_north & present_within_buffer & !present_below_south ~ "Dangermond Endemic Presence",
-      TRUE ~ "Absent Species"
+      !present_above_north & 
+          present_within_buffer & 
+          present_below_south ~ "Southern Species Range Edge",
+      present_above_north & 
+          present_within_buffer & 
+          !present_below_south ~ "Northern Species Range Edge",
+      present_above_north & 
+          present_within_buffer & 
+          present_below_south ~ "Continuous Presence",
+      present_above_north & 
+          !present_within_buffer & 
+          present_below_south ~ "Avoidant Presence",
+      !present_above_north & 
+          !present_within_buffer & 
+          present_below_south ~ "Southern Only Presence",      
+      present_above_north & 
+          !present_within_buffer & 
+          !present_below_south ~ "Northern Only Presence",
+      !present_above_north & 
+          present_within_buffer & 
+          !present_below_south ~ "Dangermond Endemic Presence",
+      TRUE ~ "Absent Presence"
     )
   )
 ```
