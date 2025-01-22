@@ -166,8 +166,8 @@ biodiv_total <- biodiv_total %>%
 ## Point Conception Latitude Buffer 
 ```{r}
 # Create north and south threshold 0.5 degrees around Point Conception 
-north_bound <- 34.4 
-south_bound <- 34.9 
+north_bound <- 34.9
+south_bound <- 34.4 
 
 # Confirm that these are the correct lats for the buffer with Erica 
 ```
@@ -178,13 +178,15 @@ Need to figure out way to determine which species have a range edge in the prese
 2. Northern Range Edge: Present above the north bound, present within the preserve, and absent below the south bound.
 3. Continuous Presence: Present within the preserve, below the south bound, and above the north bound.
 
+REALIZE AN ISSUE WITH LATITUDE AND LONG 
+
 ```{r}
 # Classify species by range edge category
 range_edge_categories <- biodiv_total %>%
     group_by(species_lump) %>%
   summarize(
     present_below_south = any(latitude < south_bound & presence==1),
-    present_within_buffer = any(latitude >= north_bound & presence==1) & 
+    present_within_buffer = any(latitude <= north_bound & presence==1) & 
         any(latitude >= south_bound & presence ==1),
     present_above_north = any(latitude > north_bound & presence==1)
   ) %>%
@@ -202,6 +204,19 @@ range_edge_categories <- biodiv_total %>%
   )
 ```
 
+Need to see how many species are found in `biodiv_total` and `range_edge_category`
+```{r}
+# unique(biodiv_total$species_lump)
+# unique(range_edge_categories$species_lump)
+
+# Both are at 375 
+```
+
+Notes on how we can improve apon range categories 
+
+- Make a column that sums the present observations 
+- Make a column that sumns the absent observations 
+- Could merge this dataset with the `biodiv_geo` dataset that is formed later so that there is one single dataset that contains the geometry column and the range edge category. 
 
 
 ## Map of California with Dangermond Preserve 
@@ -235,11 +250,7 @@ tm_credits("Dangermond Preserve",
 ```
 
 
-What can be helpful: 
-
-- Create bounding box that is more closely focused on the preserve 
-- Pick a few species to map their presence (remove `presence` = 0)
-- Check if I need to turn the lat long columns into a geometry column
+### Bounding box for closer view of Preserve + Santa Barbara 
 
 ```{r}
 # Create bounding box for closer to preserve 
@@ -275,6 +286,8 @@ if(st_crs(california) == st_crs(biodiv_geo)) {
 
 
 ### California mussel 
+
+This is a species that has a known range that spans all of CA 
 ```{r}
 # Filter to cal mussel species to potentially use (for some reason it keeps getting wrong latitudes, might not use)
 mussel_present <- biodiv_geo %>% 
@@ -360,5 +373,110 @@ tm_layout(bg.color = "#daf0ff", # background ocean color
           legend.position = c("left", "top"),
           legend.frame = TRUE)
 ```
+
+
+
+#### Checking the range edge categories 
+
+Acmaea mitra - whitecap limpet - NORTHERN ONLY PRESENCE 
+
+Ahnfeltiopsis linearis - type of algae - NORTHERN SPECIES RANGE EDGE 
+
+[Confirm known species range](https://ucjeps.berkeley.edu/seaweedflora/eflora_display.php?tid=115)"Common to abundant on sand-swept rocks, midtidal to lower intertidal, S. Br. Columbia to Pt. Conception, Calif" 
+
+Limpet 
+```{r}
+# Filter for limpet species and presnece and absence 
+limpet <- biodiv_geo |> 
+  filter(species_lump == "Acmaea mitra")
+
+limpet_pres <- limpet |> 
+  filter(presence == 1)
+
+limpet_abs <- limpet |> 
+  filter(presence == 0)
+
+
+# Map of range to confirm no presence south of Dangermond Preserve 
+# california base map
+tm_shape(california) +
+  tm_borders() +
+# dangermond preserve 
+tm_shape(dangermond) + 
+  tm_polygons(col = 'orange') + 
+tm_credits("Dangermond Preserve", 
+           position = c(0.41, 0.22),
+           size = 0.7) + 
+tm_shape(limpet_pres) + 
+  tm_dots(col = "blue", alpha = 0.5, size = 0.15) + 
+tm_shape(limpet_abs) + 
+  tm_dots(col = "red", alpha = 0.5, size = 0.15) + 
+  
+tm_add_legend(type = "symbol",  # add legend for dots 
+              labels = "Species present", 
+              col = "blue") + 
+tm_add_legend(type = "symbol",  # add legend for dots 
+              labels = "Species absent", 
+              col = "red") + 
+tm_layout(main.title = "Acmaea mitra CA distribution",
+          fontfamily = "serif",
+          legend.position = c("right", "top"),
+          legend.frame = TRUE) + 
+  tm_shape(buffer_lines) +
+  tm_lines(col = "grey", lwd = 2, lty = "dashed")
+
+
+print(min(limpet_pres$latitude))
+# Minimum latitude is NOT within the buffer zone (34.4 - 34.9)
+# Northern species only confirmed 
+```
+
+Algae 
+```{r}
+# Filter for algae species and presence and absence 
+algae <- biodiv_geo |> 
+  filter(species_lump == "Ahnfeltiopsis linearis")
+
+algae_pres <- algae |> 
+  filter(presence == 1)
+
+algae_abs <- algae |> 
+  filter(presence == 0)
+
+
+# Map of range to confirm no presence south of Dangermond Preserve 
+# california base map
+tm_shape(california) +
+  tm_borders() +
+# dangermond preserve 
+tm_shape(dangermond) + 
+  tm_polygons(col = 'orange') + 
+tm_credits("Dangermond Preserve", 
+           position = c(0.41, 0.22),
+           size = 0.7) + 
+# absence + presence
+  tm_shape(algae_pres) + 
+  tm_dots(col = "blue", alpha = 0.5, size = 0.15) + 
+tm_shape(algae_abs) + 
+  tm_dots(col = "red", alpha = 0.5, size = 0.15) + 
+  
+tm_add_legend(type = "symbol",  # add legend for dots 
+              labels = "Species present", 
+              col = "blue") + 
+tm_add_legend(type = "symbol",  # add legend for dots 
+              labels = "Species absent", 
+              col = "red") + 
+tm_layout(main.title = "Ahnfeltiopsis linearis CA distribution",
+          fontfamily = "serif",
+          legend.position = c("right", "top"),
+          legend.frame = TRUE) + 
+  tm_shape(buffer_lines) +
+  tm_lines(col = "grey", lwd = 2, lty = "dashed")
+
+
+print(min(algae_pres$latitude))
+# Min latitude is within the buffer zone 
+```
+
 
 
