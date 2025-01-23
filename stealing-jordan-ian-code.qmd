@@ -413,4 +413,32 @@ quad_filtered <- quadrat_clean %>%
 print(quad_filtered)
 ```
 
-filter species first so I am only interacting with species that appear a certain number of times every year
+filter species first so I am only interacting with species that appear a certain number of times every year. That way I can start small then move up to something that will work with more species
+
+```{r}
+# Plotting function for one species
+plot_species_map <- function(species_data, species_name) {
+  # Filter the species data for the current species
+  species_data_filtered <- species_data %>% filter(species_lump == species_name)
+  
+  # Convert the filtered species data to an 'sf' object
+  species_data_sf <- st_as_sf(species_data_filtered, coords = c("longitude", "latitude"), crs = 4326)
+  
+  # Create the map
+  map <- tm_shape(california) +
+    tm_borders() +
+    tm_shape(species_data_sf) +
+    tm_dots(col = "blue", size = 0.15, alpha = 0.6, 
+            scale = species_data_sf$total_count / max(species_data_sf$total_count))  # Scale dots based on count
+  
+  # Return the map
+  return(map)
+}
+```
+
+```{r}
+
+# Input the filtered data and species name
+plot_species_map(species_data = quad_filtered, species_name = "Lottia pelta")
+```
+
