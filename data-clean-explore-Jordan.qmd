@@ -10,6 +10,8 @@ editor_options:
 ## Set Up
 
 ```{r}
+#| code-fold: true
+#| message: false
 # Load packages 
 library(tidyverse)
 library(here)
@@ -17,11 +19,13 @@ library(readxl)
 library(spData)
 library(sf)
 library(tmap)
+library(kableExtra)
 ```
 
 ## Data 
 
 ```{r}
+#| code-fold: true
 # Read in three excel files from MARINe biodiversity data 
 point_contact_raw <- read_excel(here('data', 'cbs_data_CA_2023.xlsx'), sheet = 'point_contact_summary_data')
 quadrat_raw <- read_excel(here('data', 'cbs_data_CA_2023.xlsx'), sheet = 'quadrat_summary_data')
@@ -85,6 +89,8 @@ While Erica did not separate by year, I feel it would be valuable to separate th
 
 ## Data Cleaning 
 ```{r}
+#| code-fold: true
+
 # Clean point_contact dataset 
 point_contact_clean <- point_contact_raw %>% 
   # Remove non-matching columns 
@@ -132,6 +138,7 @@ biodiv_merge <- bind_rows(point_contact_clean, quadrat_clean, swath_clean)
 
 #### Group by site, species, (and year?)  
 ```{r}
+#| code-fold: true
 # Group by site species and year 
 # biodiv_grouped <- biodiv_merge %>% 
 #   group_by(marine_site_name, latitude, longitude, species_lump, year) %>% 
@@ -140,7 +147,7 @@ biodiv_merge <- bind_rows(point_contact_clean, quadrat_clean, swath_clean)
 
 - This leaves a total of 101,577 rows (from an orginal 102,522 rows)
 - From 2000 to 2023 
-- I could consider combining my year blocks (every 5 years?)
+- I could consider combining my year blocks (every 10 years?)
 
 Just to see, lets group by and not include year, that way we get the total range from the year 2000 to 2023 
 
@@ -153,7 +160,6 @@ biodiv_total <- biodiv_merge %>%
 
 Rows = 39,413
 
-For the data exploration, I will use this data since there are less rows. 
 
 #### Create present or not present column 
 ```{r}
@@ -163,7 +169,7 @@ biodiv_total <- biodiv_total %>%
 ```
 
 
-## Point Conception Latitude Buffer 
+### Point Conception Latitude Buffer 
 ```{r}
 # Create north and south threshold 0.5 degrees around Point Conception 
 north_bound <- 34.9
@@ -172,13 +178,16 @@ south_bound <- 34.4
 # Confirm that these are the correct lats for the buffer with Erica 
 ```
 
-Need to figure out way to determine which species have a range edge in the preserve. 
+## Range Classification 
 
-1. Southern Range Edge: Present below the south bound, present within the preserve, and absent above the north bound.
-2. Northern Range Edge: Present above the north bound, present within the preserve, and absent below the south bound.
-3. Continuous Presence: Present within the preserve, below the south bound, and above the north bound.
+1. **Southern Range Edge**: Present above the north bound, present within the preserve, and absent below the south bound.
+2. **Northern Range Edge**: Present below the south bound, present within the preserve, and absent above the north bound.
+3. **Continuous Presence**: Present within the preserve, below the south bound, and above the north bound.
+4. **Avoidant Presence**: Found North and South, but not within the buffer. 
+5. **Dangermond Only Presence**: Only found within the buffer 
+6. **Southern Only Presence**: Only found south of the buffer. 
+7. **Northern Only Presence**: Only found north of the buffer. 
 
-REALIZE AN ISSUE WITH LATITUDE AND LONG 
 
 ```{r}
 # Classify species by range edge category
@@ -192,30 +201,48 @@ range_edge_categories <- biodiv_total %>%
   ) %>%
   mutate(
     range_edge_category = case_when(
-      !present_above_north & present_within_buffer & present_below_south ~ "Southern Species Range Edge",
-      present_above_north & present_within_buffer & !present_below_south ~ "Northern Species Range Edge",
+      !present_above_north & present_within_buffer & present_below_south ~ "Northern Range Edge",
+      present_above_north & present_within_buffer & !present_below_south ~ "Southern Range Edge",
       present_above_north & present_within_buffer & present_below_south ~ "Continuous Presence",
       present_above_north & !present_within_buffer & present_below_south ~ "Avoidant Presence",
       !present_above_north & !present_within_buffer & present_below_south ~ "Southern Only Presence",      
       present_above_north & !present_within_buffer & !present_below_south ~ "Northern Only Presence",
-      !present_above_north & present_within_buffer & !present_below_south ~ "Dangermond Endemic Presence",
+      !present_above_north & present_within_buffer & !present_below_south ~ "Dangermond Only Presence",
       TRUE ~ "Absent Species"
     )
   )
+
+range_edge_categories <- range_edge_categories %>%
+  arrange(range_edge_category)
 ```
 
-Need to see how many species are found in `biodiv_total` and `range_edge_category`
+#### Summary Table 
 ```{r}
+# Summarize the data
+summary_table <- range_edge_categories %>%
+  group_by(range_edge_category) %>%
+  summarize(`Total species` = n(), .groups = "drop") 
+
+# Create a kableExtra table
+summary_table %>%
+  rename(`Range Category` = range_edge_category) %>%
+  kbl(caption = "Species range categories of MARINe Biodiv data") %>%
+  kable_classic(full_width = FALSE, html_font = "Times")
+```
+
+
+Need to see how many species are found in `biodiv_total` and `range_edge_category` to confirm no species were lost 
+```{r}
+#| code-fold: true
 # unique(biodiv_total$species_lump)
 # unique(range_edge_categories$species_lump)
-
-# Both are at 375 
 ```
 
-Notes on how we can improve apon range categories 
+Both are at 375 
+Notes on how we can improve upon range categories 
 
 - Make a column that sums the present observations 
-- Make a column that sumns the absent observations 
+- Make a column that sums the absent observations 
 - Could merge this dataset with the `biodiv_geo` dataset that is formed later so that there is one single dataset that contains the geometry column and the range edge category. 
 
 
@@ -224,6 +251,7 @@ Notes on how we can improve apon range categories
 Goal for this visualization is to create a map of California with the preserve highlighted. Could be used to visualize the species ranges.  
 
 ```{r}
+#| code-fold: true
 # Convert to WGS84 to lat long
 california <- st_transform(california, crs = 4326)
 dangermond <- st_transform(dangermond, crs = 4326)
@@ -237,6 +265,7 @@ if(st_crs(california) == st_crs(dangermond)) {
 ```
 
 ```{r}
+#| code-fold: true
 # Map of California with preserve highlighted 
 tm_shape(california) +
   tm_borders() + 
@@ -253,6 +282,7 @@ tm_credits("Dangermond Preserve",
 ### Bounding box for closer view of Preserve + Santa Barbara 
 
 ```{r}
+  #| code-fold: true
 # Create bounding box for closer to preserve 
 bbox_sb <- st_bbox(c(xmin = -121.835697,
                      xmax = -118.597476,
@@ -270,6 +300,7 @@ tm_shape(dangermond) +
 
 #### Convert biodiv data to sf object 
 ```{r}
+#| code-fold: true
 biodiv_geo <- biodiv_total %>% 
   st_as_sf(coords = c("longitude", "latitude"), crs = st_crs(dangermond), remove = FALSE)
 
@@ -289,6 +320,7 @@ if(st_crs(california) == st_crs(biodiv_geo)) {
 
 This is a species that has a known range that spans all of CA 
 ```{r}
+#| code-fold: true
 # Filter to cal mussel species to potentially use (for some reason it keeps getting wrong latitudes, might not use)
 mussel_present <- biodiv_geo %>% 
   filter(species_lump == "Mytilus californianus") %>% 
@@ -301,6 +333,7 @@ mussel_absent <- biodiv_geo %>%
 
 ### Map of mussels present and absent 
 ```{r}
+#| code-fold: true
 # california base map
 tm_shape(california) +
   tm_borders() +
@@ -338,6 +371,7 @@ tm_layout(main.title = "M.californianus CA distribution",
 
 ### Map mussel distribution near preserve 
 ```{r}
+#| code-fold: true
 # Create a sf objec for the buffer lines
 buffer_lines <- st_sfc(
   st_linestring(rbind(c(-125, 34.4), c(-115, 34.4))), # north bound
@@ -386,6 +420,7 @@ Ahnfeltiopsis linearis - type of algae - NORTHERN SPECIES RANGE EDGE
 
 Limpet 
 ```{r}
+#| code-fold: true
 # Filter for limpet species and presnece and absence 
 limpet <- biodiv_geo |> 
   filter(species_lump == "Acmaea mitra")
@@ -433,6 +468,7 @@ print(min(limpet_pres$latitude))
 
 Algae 
 ```{r}
+#| code-fold: true
 # Filter for algae species and presence and absence 
 algae <- biodiv_geo |> 
   filter(species_lump == "Ahnfeltiopsis linearis")
