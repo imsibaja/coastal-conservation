@@ -439,6 +439,11 @@ plot_species_map <- function(species_data, species_name) {
 ```{r}
 
 # Input the filtered data and species name
-plot_species_map(species_data = quad_filtered, species_name = "Lottia pelta")
+plot_species_map(species_data = quad_filtered, species_name = "Trichotropis cancellata")
 ```
 
+
+maybe make something that alerts us if species is more up in the northern states
+
+
+taxize data package
