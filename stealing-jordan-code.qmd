@@ -148,7 +148,7 @@ Just to see, lets group by and not include year, that way we get the total range
 ```{r}
 # Group by site and species (no year)
 biodiv_total <- biodiv_merge %>% 
-  group_by(marine_site_name, latitude, longitude, species_lump) %>% 
+  group_by(marine_site_name, latitude, longitude, species_lump, year) %>% 
   summarise(num_count = sum(total_count))
 ```
 
@@ -188,9 +188,22 @@ range_edge_categories <- biodiv_total %>%
     present_below_south = any(latitude < south_bound & presence==1),
     present_within_buffer = any(latitude >= south_bound & presence == 1) &
         any(latitude <= north_bound & presence == 1),
-    present_above_north = any(latitude > north_bound & presence==1)
+    present_above_north = any(latitude > north_bound & presence==1),
+    
+    # Number of observations
+    observations = n(),
+    
+    # Number of sites
+    sites = n_distinct(marine_site_name),
+    
+    # Total Counts
+    total_counts = sum(num_count),
+    
+    # Fraction of years present
+    fraction_years_present = sum(presence) / n_distinct(year)
   ) %>%
   mutate(
+    # Categorize species by range edges  
     range_edge_category = case_when(
       present_above_north & present_within_buffer & !present_below_south ~ "Southern Species Range Edge",
       !present_above_north & present_within_buffer & present_below_south ~ "Northern Species Range Edge",
@@ -200,7 +213,7 @@ range_edge_categories <- biodiv_total %>%
       present_above_north & !present_within_buffer & !present_below_south ~ "Northern Only Presence",
       !present_above_north & present_within_buffer & !present_below_south ~ "Dangermond Endemic Presence",
       TRUE ~ "Absent Presence"
-    )
+      )
   )
 ```
 
@@ -371,3 +384,66 @@ tm_layout(bg.color = "#daf0ff", # background ocean color
           legend.position = c("left", "top"),
           legend.frame = TRUE)
 ```
+
+## Range function
+```{r}
+species_range <- function(south_lat, north_lat){
+    biodiv_total %>%
+    group_by(species_lump) %>%
+  summarize(
+    present_below_south = any(latitude < south_lat & presence==1),
+    present_within_buffer = any(latitude >= south_lat & presence == 1) &
+        any(latitude <= north_lat & presence == 1),
+    present_above_north = any(latitude > north_lat & presence==1),
+    
+    # Number of observations
+    observations = n(),
+    
+    # Number of sites
+    sites = n_distinct(marine_site_name),
+    
+    # Total Counts
+    total_counts = sum(num_count),
+    
+    # Fraction of years present
+    fraction_years_present = sum(presence) / n_distinct(year)
+  ) %>%
+  mutate(
+    # Categorize species by range edges  
+    range_edge_category = case_when(
+      present_above_north & present_within_buffer & !present_below_south ~ "Southern Species Range Edge",
+      !present_above_north & present_within_buffer & present_below_south ~ "Northern Species Range Edge",
+      present_above_north & present_within_buffer & present_below_south ~ "Continuous Presence",
+      present_above_north & !present_within_buffer & present_below_south ~ "Avoidant Presence",
+      !present_above_north & !present_within_buffer & present_below_south ~ "Southern Only Presence",      
+      present_above_north & !present_within_buffer & !present_below_south ~ "Northern Only Presence",
+      !present_above_north & present_within_buffer & !present_below_south ~ "Dangermond Endemic Presence",
+      TRUE ~ "Absent Presence"
+      )
+  )
+}
+```
+
+
+
+```{r}
+
+CA_absolute_south <- 32.5
+CA_absolute_north <- 42
+
+# Sequence of total California Range
+range_sequence <- seq(CA_absolute_south, CA_absolute_north - .5, by=.5)
+# Empty list of dataframes
+range_list <- vector("list", length=length(range_sequence))
+
+# create dataframe of each latitude range
+for (lat in range_sequence){
+   current_range_df <- species_range(lat, lat + .5)
+   current_range_df$range_lat <- paste(lat, lat + .5, sep = "-")
+   range_list[which(lat == range_sequence)] <- current_range_df
+}
+
+# Combine all dataframes into one
+all_ranges = do.call(rbind, range_list)
+```
+
