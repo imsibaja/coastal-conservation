@@ -39,6 +39,7 @@ california <- spData::us_states %>%
 
 ```
 
+#
 
 ## Data Cleaning Plan
 

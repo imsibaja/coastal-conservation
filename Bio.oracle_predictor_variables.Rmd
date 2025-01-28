@@ -1,0 +1,246 @@
+---
+title: "CA.coast.env.data"
+author: "Erica Nielsen"
+date: "2025-01-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Collating and prepping environmental data for modeling analyses
+
+First we will generate the environmental predictor data:
+
+Marine env data = Bio-Oracle v3
+Specific variables: air temp, SST, CHL, NO3, O2, pH, salinity, mixed layer depth, cloud fraction, slope, aspect
+CMIP6 models: ACCESSESM1-5, CanESM5, CESM2-WACCM, CNRM-ESM2-1, GFDL-ESM4, IPSL-CM6A-LR, MIROC-ES2L, MPI-ESM1-2-LR, MRI-ESM2-0, UKESM1-0-LL
+0.05 deg resolution
+SSP1-1.9, SSP1-2.6, SSP2-4.6, SSP3-7.0 and SSP5.8.5
+Decadal averages from 2000-2009 to 2090-2100 
+
+
+```{r Read env data, warning=FALSE}
+
+setwd("C:/Users/erica.nielsen/Desktop/Synz/env.data/BioOracle.v3")
+
+library(biooracler)
+library(raster)
+library(terra)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# specify variables of interest to download (PRESENT)
+# baseline indicates present day data, depthsurf indicates sea surface
+
+# tas = air temp / mlotst = mixed layer depth / thetao = ocean temp / so = salinity / 
+# swd = sea water direction / sws = sea water speed / clt= cloud fraction / phyc = total phytoplankton
+
+layer_list <-c("tas_baseline_2000_2020_depthsurf", "chl_baseline_2000_2018_depthsurf", "o2_baseline_2000_2018_depthmax", "mlotst_baseline_2000_2019_depthsurf", "no3_baseline_2000_2018_depthsurf", "thetao_baseline_2000_2019_depthsurf", "ph_baseline_2000_2018_depthsurf", "so_baseline_2000_2019_depthsurf", "swd_baseline_2000_2019_depthsurf", "sws_baseline_2000_2019_depthsurf", "clt_baseline_2000_2020_depthsurf", "phyc_baseline_2000_2020_depthsurf")
+
+# set constraints
+time = c('2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z')
+latitude = c(32, 43)
+longitude = c(-126, -116)
+
+constraints = list(time, latitude, longitude)
+names(constraints) = c("time", "latitude", "longitude")
+
+# create output filenames to write to
+#ff <- extension(basename(layer_list), '_mean_00.tif')
+#outpath <- 'C:/Users/erica.nielsen/Desktop/Synz/env.data/BioOracle.v3'    
+#outfiles <- file.path(outpath, ff)
+
+# download each layer, grab only the mean variable (can also maybe include range), write each to local directory
+for(i in layer_list){     
+r <- download_layers(dataset_id = i,
+                     # variables = variables,
+                     constraints = constraints,
+                     fmt = "raster")
+r_sub <- subset(r, grep('_mean', names(r), value = T))
+
+terra::writeRaster(r_sub, file = paste0(i, "_mean_00.tif"), overwrite = T, filetype="GTiff")
+}
+
+
+# read in layers and stack 
+# NB!! need to first go in directory & remove the .axu.json files 
+files <- list.files(path="C:/Users/erica.nielsen/Desktop/Synz/env.data/BioOracle.v3", pattern="mean_00.tif", full.names=TRUE)
+
+env_00 <- raster::stack(files)
+#writeRaster(env_00, filename="env_00.tif", format="GTiff", overwrite=TRUE)
+
+
+```
+
+Next we will take the biodiversity data downloaded from MARINe and turn it into spp presence/absence data needed as input for models. 
+
+```{r Read biodiversity data, warning=FALSE}
+library(readxl)
+
+#read point contact
+pt_cont <- read_excel("C:/Users/erica.nielsen/Desktop/Synz/MARINe/large_biodiv_data/cbs_data_CA_2023.xlsx", sheet = "point_contact_summary_data")
+
+#read quadrat summary
+quad <- read_excel("C:/Users/erica.nielsen/Desktop/Synz/MARINe/large_biodiv_data/cbs_data_CA_2023.xlsx", sheet = "quadrat_summary_data")
+
+#read swath data
+swath <- read_excel("C:/Users/erica.nielsen/Desktop/Synz/MARINe/large_biodiv_data/cbs_data_CA_2023.xlsx", sheet = "swath_summary_data")
+
+```
+
+
+```{r edit biodiv data, message=FALSE, warning=FALSE, echo=FALSE}
+
+### filter to only include bio data for same years as env data (include 1980s to 2000 because most sites not sampled much during that time)
+
+quad_yr <- quad %>% filter(year < 2010)
+swath_yr <- swath %>% filter(year < 2010)
+pt_cont_yr <- pt_cont %>% filter(year < 2010)
+
+
+# remove non-living things
+remove_chars = c("Rock", "Sand", "Tar")
+
+pt_cont_f <- pt_cont_yr %>% filter(!(species_lump %in% remove_chars))
+quad_f <- quad_yr %>% filter(!(species_lump %in% remove_chars))
+
+--
+  
+### calc avg abundance per sampling type (avg'd over years)
+quad_avg <- quad_yr %>%
+     group_by(marine_site_name, latitude, longitude, species_lump) %>%
+     dplyr::summarize(Mean = mean(density_per_m2, na.rm=FALSE))
+
+cov_avg <- pt_cont_yr %>%
+     group_by(marine_site_name, latitude, longitude, species_lump) %>%
+     dplyr::summarize(Mean = mean(percent_cover, na.rm=FALSE))
+
+swath_avg <- swath_yr %>%
+     group_by(marine_site_name, latitude, longitude, species_lump) %>%
+     dplyr::summarize(Mean = mean(density_per_m2, na.rm=FALSE))
+
+# join dataframes to make one DF for all sampling types
+common_col_names <- intersect(names(quad_avg), names(swath_avg)) #get column names
+dens_avg <-merge(quad_avg, swath_avg, by=common_col_names, all.x=TRUE, all.y=TRUE) #merge 2 DFs
+bio_avg <-merge(dens_avg, cov_avg, by=common_col_names, all.x=TRUE, all.y=TRUE) #merge in percet cov
+
+```
+
+
+```{r calc pres/abs}
+
+### filter to only include bio data for same years as env data (include 1980s to 2000 because most sites not sampled much during that time)
+
+quad_yr <- quad %>% filter(year < 2010)
+swath_yr <- swath %>% filter(year < 2010)
+pt_cont_yr <- pt_cont %>% filter(year < 2010)
+
+# will create alternative spp input data, for swath & quad, we say that if total count > 2, then we say present
+
+quad_f$pres <- ifelse(quad_f$total_count>2, 1, 0)
+
+pt_cont_f$pres<-ifelse(pt_cont_f$number_of_hits>2, 1, 0)
+
+swath_yr$pres<-ifelse(swath_yr$total_count>2, 1, 0)
+
+# take average of presence over years
+quad_pres <- quad_f %>%
+     group_by(marine_site_name, latitude, longitude, species_lump) %>%
+     summarize(Mean = mean(pres, na.rm=FALSE))
+
+pt_cont_pres <- pt_cont_f %>%
+     group_by(marine_site_name, latitude, longitude, species_lump) %>%
+     summarize(Mean = mean(pres, na.rm=FALSE))
+
+swath_pres <- swath_yr %>%
+     group_by(marine_site_name, latitude, longitude, species_lump) %>%
+     summarize(Mean = mean(pres, na.rm=FALSE))
+
+#edit again and change values so anything >0.5 is pres, and anything less is absent (so it had to present in at least half the years sampled)
+quad_pres$pres<-ifelse(quad_pres$Mean>=0.5,1,0)
+
+pt_cont_pres$pres<-ifelse(pt_cont_pres$Mean>=0.5,1,0)
+ 
+swath_pres$pres<-ifelse(swath_pres$Mean>=0.5,1,0)
+
+#now join dataframes to make pres/abs spp DF
+common_col_names <- intersect(names(quad_pres), names(pt_cont_pres)) #get column names
+quad_pt_pres<-merge(quad_pres, pt_cont_pres, by=common_col_names, all.x=TRUE, all.y=TRUE) #merge first 2 DFs
+quad_pt_swath_pres<-merge(quad_pres, swath_pres, by=common_col_names, all.x=TRUE, all.y=TRUE) #merge in swath
+
+#remove 'mean' column
+quad_pt_swath_pres <- subset(quad_pt_swath_pres, select = -Mean)
+
+#make wide
+bio_pres <- tidyr::spread(quad_pt_swath_pres, key = species_lump, value = pres)
+
+```
+
+Now we will extract env values from the coordinates from the biodiversity data and run correlation analyses on them to remove env variables that co-vary. 
+
+```{r extraction of data from raster}
+
+# round coords to fewer decimals so extraction from raster works better
+bio_pres <- bio_pres %>% dplyr::mutate(across(where(is.numeric), ~ round(., 2)))
+
+#extract env values from each coordinate
+xy <- bio_pres[,c(3,2)]
+rast.df <- as.data.frame(raster::extract(env_00, xy, method='bilinear'))
+xy.rast <- cbind(xy, rast.df)
+xy.env <- unique(xy.rast)
+
+env.missing <- xy.env[!complete.cases(xy.env), ]
+#only 4 sites missing data, feel okay about deleting 
+
+env.00.df <- na.omit(xy.env)
+```
+
+
+```{r env preds corrs}
+
+# calculate Pearson correlations between pairs of variables 
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+#get only env variables from DF
+env.corr.df <- env.00.df[,c(3:16)]
+
+( cor_current <- cor(env.corr.df, method="spearman") )
+
+# reformat correlation table for graphical analyse
+#here you require the package reshape
+cor_current[ upper.tri(cor_current, diag = T) ] <- NA
+cor_current_resh <- na.omit( reshape2::melt( cor_current) )
+colnames(cor_current_resh) <- c("var1", "var2", "correlation")
+
+# only consider absolute value of correlations
+cor_current_resh$correlation <- abs(cor_current_resh$correlation)
+cor_current_resh[order(cor_current_resh$correlation),]
+
+# make a correlation plot
+gg_cor <- ggplot(cor_current_resh, aes(x = var1, y = var2 , fill = correlation) )
+gg_cor + geom_tile() + xlab("") + ylab("") + theme(axis.text.x = element_text(angle=90, vjust=0.5))
+
+```
+
+
+```{r env preds select}
+
+# remove correlated vars
+VARSEL <-c("clt_mean", "mlotst_mean", "o2_mean", "so_mean",  "swd_mean", "sws_mean", "thetao_mean")
+
+env_00_new <- stack(subset(env_00, VARSEL))
+
+rast.df <- as.data.frame(raster::extract(env_00_new, xy, method='bilinear'))
+xy.rast <- cbind(xy, rast.df)
+xy.env <- unique(xy.rast)
+
+env.missing <- xy.env[!complete.cases(xy.env), ]
+#only 4 sites missing data, feel okay about deleting 
+
+env.00.df.PA <- na.omit(xy.env)
+
+```
