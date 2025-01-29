@@ -6,7 +6,7 @@ editor: visual
 ---
 
 ```{r}
-devtools::install_github("bio-oracle/biooracler")
+#devtools::install_github("bio-oracle/biooracler")
 ```
 
 ```{r}
@@ -17,5 +17,44 @@ library(spData)
 library(sf)
 library(tmap)
 library(biooracler)
+library(readxl)
+library(here)
 ```
 
+```{r}
+# Install bio-oracle/biooracler library
+#devtools::install_github("bio-oracle/biooracler")
+```
+
+## Reading in the data
+
+Make sure you tell it what directory you want the data in 
+
+```{r}
+layer_list <-c("tas_baseline_2000_2020_depthsurf", "chl_baseline_2000_2018_depthsurf", "o2_baseline_2000_2018_depthmax", "mlotst_baseline_2000_2019_depthsurf", "no3_baseline_2000_2018_depthsurf", "thetao_baseline_2000_2019_depthsurf", "ph_baseline_2000_2018_depthsurf", "so_baseline_2000_2019_depthsurf", "swd_baseline_2000_2019_depthsurf", "sws_baseline_2000_2019_depthsurf", "clt_baseline_2000_2020_depthsurf", "phyc_baseline_2000_2020_depthsurf")
+
+# set constraints
+time = c('2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z')
+latitude = c(32, 43)
+longitude = c(-126, -116)
+
+constraints = list(time, latitude, longitude)
+names(constraints) = c("time", "latitude", "longitude")
+
+# create output filenames to write to
+#ff <- extension(basename(layer_list), '_mean_00.tif')
+#outpath <- 'C:/Users/erica.nielsen/Desktop/Synz/env.data/BioOracle.v3'    
+#outfiles <- file.path(outpath, ff)
+
+# download each layer, grab only the mean variable (can also maybe include range), write each to local directory
+for(i in layer_list){     
+r <- download_layers(dataset_id = i,
+                     # variables = variables,
+                     constraints = constraints,
+                     fmt = "raster")
+r_sub <- subset(r, grep('_mean', names(r), value = T))
+
+terra::writeRaster(r_sub, file = paste0(i, "_mean_00.tif"), overwrite = T, filetype="GTiff")
+}
+
+```
