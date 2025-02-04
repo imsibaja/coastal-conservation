@@ -205,8 +205,8 @@ range_edge_categories <- biodiv_total %>%
   mutate(
     # Categorize species by range edges  
     range_edge_category = case_when(
-      present_above_north & present_within_buffer & !present_below_south ~ "Southern Species Range Edge",
-      !present_above_north & present_within_buffer & present_below_south ~ "Northern Species Range Edge",
+      present_above_north & present_within_buffer & !present_below_south ~ "Southern Range Edge",
+      !present_above_north & present_within_buffer & present_below_south ~ "Northern Range Edge",
       present_above_north & present_within_buffer & present_below_south ~ "Continuous Presence",
       present_above_north & !present_within_buffer & present_below_south ~ "Avoidant Presence",
       !present_above_north & !present_within_buffer & present_below_south ~ "Southern Only Presence",      
@@ -406,13 +406,14 @@ species_range <- function(south_lat, north_lat){
     total_counts = sum(num_count),
     
     # Fraction of years present
+    # FIX
     fraction_years_present = sum(presence) / n_distinct(year)
   ) %>%
   mutate(
     # Categorize species by range edges  
     range_edge_category = case_when(
-      present_above_north & present_within_buffer & !present_below_south ~ "Southern Species Range Edge",
-      !present_above_north & present_within_buffer & present_below_south ~ "Northern Species Range Edge",
+      present_above_north & present_within_buffer & !present_below_south ~ "Southern Range Edge",
+      !present_above_north & present_within_buffer & present_below_south ~ "Northern Range Edge",
       present_above_north & present_within_buffer & present_below_south ~ "Continuous Presence",
       present_above_north & !present_within_buffer & present_below_south ~ "Avoidant Presence",
       !present_above_north & !present_within_buffer & present_below_south ~ "Southern Only Presence",      
