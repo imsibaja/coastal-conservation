@@ -168,8 +168,8 @@ biodiv_total <- biodiv_total %>%
 
 ```{r}
 # Create north and south threshold 0.5 degrees around Point Conception 
-south_bound <- 34.4 
-north_bound <- 34.9 
+PC_north_bound <- 34.9331449422735
+PC_south_bound <- 34.4727142766036
 
 # Confirm that these are the correct lats for the buffer with Erica 
 ```
@@ -182,25 +182,28 @@ Need to figure out way to determine which species have a range edge in the prese
 
 ```{r}
 # Classify species by range edge category
-range_edge_categories <- biodiv_total %>%
+dangermond_range_edge <- biodiv_total %>%
     group_by(species_lump) %>%
   summarize(
-    present_below_south = any(latitude < south_bound & presence==1),
-    present_within_buffer = any(latitude >= south_bound & presence == 1) &
-        any(latitude <= north_bound & presence == 1),
-    present_above_north = any(latitude > north_bound & presence==1),
+    present_below_south = any(latitude < PC_south_bound & presence==1),
+    present_within_buffer = any(latitude >= PC_south_bound & presence == 1) &
+        any(latitude <= PC_north_bound & presence == 1),
+    present_above_north = any(latitude > PC_north_bound & presence==1),
     
-    # Take a look
-    observations = n(),
+    # Observations where Present
+    present_observations = sum(presence == 1, na.rm = TRUE),
     
-    # Take a look (where present)
-    sites = n_distinct(marine_site_name),
+    # Observations Present/Absence
+    total_observations = n(),
+    
+    # distinct sites where present
+    sites = n_distinct(marine_site_name[presence==1]),
     
     # Total Counts
     total_counts = sum(num_count),
     
     # Fraction of years present
-    fraction_years_present = sum(presence) / n_distinct(year)
+    percent_years_present = n_distinct(year[presence==1]) / n_distinct(year) * 100
   ) %>%
   mutate(
     # Categorize species by range edges  
@@ -214,7 +217,9 @@ range_edge_categories <- biodiv_total %>%
       !present_above_north & present_within_buffer & !present_below_south ~ "Dangermond Endemic Presence",
       TRUE ~ "Absent Presence"
       )
-  )
+  ) %>% 
+    ungroup() %>% 
+    filter(range_edge_category=="Northern Range Edge")
 ```
 
 Currently, all of the results are Other. Need to trouble shoot to figure out what could be wrong. A smart way to do this could be to filter to only 2 or 3 species, look up their known ranges and examine the latitudes they are sampled at. Retry this range classification and determine what went wrong.
@@ -282,8 +287,6 @@ if(st_crs(california) == st_crs(biodiv_geo)) {
   print("The coordinate reference systems do NOT match. Transformation of CRS is recommended.")
 }
 
-# Convert to WGS84 
-#biodiv_geo <- st_transform(biodiv_geo, crs = 4326)
 ```
 
 ### California mussel
@@ -349,7 +352,7 @@ tm_shape(crab_absent) + # mussels absent
 ### Map mussel distribution near preserve
 
 ```{r}
-# Create a sf objec for the buffer lines
+# Create a sf object for the buffer lines
 buffer_lines <- st_sfc(
   st_linestring(rbind(c(-125, 34.4), c(-115, 34.4))), # north bound
   st_linestring(rbind(c(-125, 34.9), c(-115, 34.9)))  # south bound
@@ -396,18 +399,21 @@ species_range <- function(south_lat, north_lat){
         any(latitude <= north_lat & presence == 1),
     present_above_north = any(latitude > north_lat & presence==1),
     
-    # Number of observations
-    observations = n(),
     
-    # Number of sites
-    sites = n_distinct(marine_site_name),
+    # Observations where Present
+    present_observations = sum(presence == 1, na.rm = TRUE),
+    
+    # Observations Present/Absence
+    total_observations = n(),
+    
+    # distinct sites where present
+    sites = n_distinct(marine_site_name[presence==1]),
     
     # Total Counts
     total_counts = sum(num_count),
     
     # Fraction of years present
-    # FIX
-    fraction_years_present = sum(presence) / n_distinct(year)
+    percent_years_present = n_distinct(year[presence==1]) / n_distinct(year) * 100
   ) %>%
   mutate(
     # Categorize species by range edges  
@@ -428,27 +434,53 @@ species_range <- function(south_lat, north_lat){
 
 ## Range function for loop
 ```{r}
+# Add southern and northern bounds of california
+coastline <- read_csv(here::here("data/coastal_spatial_data/coast.CA.100km.chunks.csv"))
 
-CA_absolute_south <- 32.5
-CA_absolute_north <- 42
+coastline_lat <- coastline$Y %>% sort(decreasing = FALSE)
 
-# Sequence of total California Range
-range_sequence <- seq(CA_absolute_south, CA_absolute_north - .5, by=.5)
-# Empty list of dataframes
-# range_list <- vector("list", length=length(range_sequence))
 range_list <-  NULL
-i <- 1
+
 # create dataframe of each latitude range
-for (lat in range_sequence){
-   current_range_df <- species_range(lat, lat + .5)
-   current_range_df$range_lat <- paste(lat, lat + .5, sep = "-")
+for (i in 1:(length(coastline_lat)-1)){
+   current_range_df <- species_range(coastline_lat[i],  
+                                     coastline_lat[i + 1])
+   current_range_df$range_lat <- paste(round(coastline_lat[i], digits=2),
+                                       round(coastline_lat[i + 1], digits=2),
+                                       sep = "-")
    current_range_df$id <- i
-   i <- i + 1
-   #range_list[which(lat == range_sequence)] <- current_range_df
+   
    range_list <- rbind(range_list, current_range_df)
 }
+```
 
+```{r}
+coastline <- coastline %>% 
+  st_as_sf(coords = c("X", "Y"), crs = st_crs(dangermond), remove = FALSE)
 
-#all_ranges = do.call(merge, range_list, by = )
+# Check that the crs matches 
+if(st_crs(coastline) == st_crs(biodiv_geo)) {
+  print("The coordinate reference systems match")
+} else {
+  print("The coordinate reference systems do NOT match. Transformation of CRS is recommended.")
+}
+```
+
+```{r}
+tm_shape(california) +
+  tm_polygons(col = "#bae4b3") + # land color 
+tm_shape(dangermond) +
+  tm_polygons(col = "orange") +
+tm_shape(coastline) +
+    tm_dots(col = "red", size = 0.1)
+```
+
+```{r}
+tm_shape(california, bbox = bbox_sb) +
+  tm_polygons(col = "#bae4b3") + # land color 
+tm_shape(dangermond) +
+  tm_polygons(col = "orange") +
+tm_shape(coastline) +
+    tm_dots(col = "red", size = 0.1)
 ```
 
