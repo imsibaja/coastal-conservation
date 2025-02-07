@@ -435,7 +435,8 @@ species_range <- function(south_lat, north_lat){
 ## Range function for loop
 ```{r}
 # Add southern and northern bounds of california
-coastline <- read_csv(here::here("data/coastal_spatial_data/coast.CA.100km.chunks.csv"))
+coastline <- read_csv(here::here("data", "coastal_spatial_data",
+                                 "coast.CA.100km.chunks.csv"))
 
 coastline_lat <- coastline$Y %>% sort(decreasing = FALSE)
 
@@ -476,11 +477,17 @@ tm_shape(coastline) +
 ```
 
 ```{r}
-tm_shape(california, bbox = bbox_sb) +
-  tm_polygons(col = "#bae4b3") + # land color 
+CA_coastline_shp <- read_sf(here('data', 'coastal_spatial_data',
+                                 'coast.line.CA.shp')) %>%
+    st_transform(crs=biodiv_geo)
+
+tm_shape(CA_coastline_shp) +
+  tm_lines(col = "#bae4b3") + # land color 
 tm_shape(dangermond) +
   tm_polygons(col = "orange") +
 tm_shape(coastline) +
-    tm_dots(col = "red", size = 0.1)
+    tm_dots(col = "red", size = 0.1) +
+tm_shape(biodiv_geo) +
+    tm_dots(col = "blue", size = 0.1) 
 ```
 
