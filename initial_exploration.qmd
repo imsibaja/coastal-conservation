@@ -184,43 +184,85 @@ Need to figure out way to determine which species have a range edge in the prese
 # Classify species by range edge category
 dangermond_range_edge <- biodiv_total %>%
     group_by(species_lump) %>%
-  summarize(
-    present_below_south = any(latitude < PC_south_bound & presence==1),
-    present_within_buffer = any(latitude >= PC_south_bound & presence == 1) &
-        any(latitude <= PC_north_bound & presence == 1),
-    present_above_north = any(latitude > PC_north_bound & presence==1),
-    
-    # Observations where Present
-    present_observations = sum(presence == 1, na.rm = TRUE),
-    
-    # Observations Present/Absence
-    total_observations = n(),
-    
-    # distinct sites where present
-    sites = n_distinct(marine_site_name[presence==1]),
-    
-    # Total Counts
-    total_counts = sum(num_count),
-    
-    # Fraction of years present
-    percent_years_present = n_distinct(year[presence==1]) / n_distinct(year) * 100
-  ) %>%
-  mutate(
-    # Categorize species by range edges  
-    range_edge_category = case_when(
-      present_above_north & present_within_buffer & !present_below_south ~ "Southern Range Edge",
-      !present_above_north & present_within_buffer & present_below_south ~ "Northern Range Edge",
-      present_above_north & present_within_buffer & present_below_south ~ "Continuous Presence",
-      present_above_north & !present_within_buffer & present_below_south ~ "Avoidant Presence",
-      !present_above_north & !present_within_buffer & present_below_south ~ "Southern Only Presence",      
-      present_above_north & !present_within_buffer & !present_below_south ~ "Northern Only Presence",
-      !present_above_north & present_within_buffer & !present_below_south ~ "Dangermond Endemic Presence",
-      TRUE ~ "Absent Presence"
-      )
-  ) %>% 
-    ungroup() %>% 
-    filter(range_edge_category=="Northern Range Edge")
+    summarize(
+        present_below_south = any(latitude < PC_south_bound &
+                                      presence == 1),
+        
+        present_within_buffer = any(
+            latitude >= PC_south_bound &
+                latitude <= PC_north_bound & presence == 1,
+            na.rm = TRUE
+        ),
+        
+        present_above_north = any(latitude > PC_north_bound &
+                                      presence == 1),
+        
+        
+        # Observations where Present
+        present_observations_site = sum(
+            latitude >= PC_south_bound &
+                latitude <= PC_north_bound &
+                presence == 1,
+            na.rm = TRUE
+        ),
+        
+        # Observations Present/Absence
+        total_observations = n(),
+        
+        # distinct sites within buffer
+        sites_in_buffer = n_distinct(marine_site_name[latitude >= PC_south_bound &
+                                                          latitude <= PC_north_bound], na.rm = TRUE),
+        
+        
+        # distinct sites where species present within buffer
+        sites_present = n_distinct(marine_site_name[latitude >= PC_south_bound &
+                                                        latitude <= PC_north_bound &
+                                                        presence == 1], na.rm = TRUE),
+        
+        # Total sites
+        total_sites = n_distinct(marine_site_name),
+        
+        # Total Counts
+        total_counts = sum(num_count, na.rm = TRUE),
+        
+        # Fraction of years present
+        percent_years_present = n_distinct(year[latitude >= PC_south_bound &
+                                                    latitude <= PC_north_bound &
+                                                    presence == 1], na.rm = TRUE) / n_distinct(year, na.rm = TRUE) * 100
+        
+    ) %>%
+    mutate(
+        # Categorize species by range edges
+        range_edge_category = case_when(
+            present_above_north &
+                present_within_buffer &
+                !present_below_south ~ "Southern Range Edge",
+            !present_above_north &
+                present_within_buffer &
+                present_below_south ~ "Northern Range Edge",
+            present_above_north &
+                present_within_buffer &
+                present_below_south ~ "Continuous Presence",
+            present_above_north &
+                !present_within_buffer &
+                present_below_south ~ "Avoidant",
+            !present_above_north &
+                !present_within_buffer &
+                present_below_south ~ "Southern Only Presence",
+            present_above_north &
+                !present_within_buffer &
+                !present_below_south ~ "Northern Only Presence",
+            !present_above_north &
+                present_within_buffer &
+                !present_below_south ~ "Dangermond Endemic Presence",
+            TRUE ~ "Absent"
+        )
+    ) %>%
+    ungroup() 
 ```
+
+
+
 
 Currently, all of the results are Other. Need to trouble shoot to figure out what could be wrong. A smart way to do this could be to filter to only 2 or 3 species, look up their known ranges and examine the latitudes they are sampled at. Retry this range classification and determine what went wrong.
 
@@ -354,8 +396,8 @@ tm_shape(crab_absent) + # mussels absent
 ```{r}
 # Create a sf object for the buffer lines
 buffer_lines <- st_sfc(
-  st_linestring(rbind(c(-125, 34.4), c(-115, 34.4))), # north bound
-  st_linestring(rbind(c(-125, 34.9), c(-115, 34.9)))  # south bound
+  st_linestring(rbind(c(-125, PC_south_bound), c(-115, PC_south_bound))), # north bound
+  st_linestring(rbind(c(-125, PC_north_bound), c(-115, PC_north_bound)))  # south bound
 ) %>% 
   st_set_crs(4326) # Set to WGS84
 
@@ -389,45 +431,52 @@ tm_layout(bg.color = "#daf0ff", # background ocean color
 ```
 
 ## Range function
+
+The problem with only using latitude is that we do not follow the coastline... need to take a look at that.
 ```{r}
-species_range <- function(south_lat, north_lat){
+species_range <- function(south_lat, north_lat) {
     biodiv_total %>%
-    group_by(species_lump) %>%
-  summarize(
-    present_below_south = any(latitude < south_lat & presence==1),
-    present_within_buffer = any(latitude >= south_lat & presence == 1) &
-        any(latitude <= north_lat & presence == 1),
-    present_above_north = any(latitude > north_lat & presence==1),
-    
-    
-    # Observations where Present
-    present_observations = sum(presence == 1, na.rm = TRUE),
-    
-    # Observations Present/Absence
-    total_observations = n(),
-    
-    # distinct sites where present
-    sites = n_distinct(marine_site_name[presence==1]),
-    
-    # Total Counts
-    total_counts = sum(num_count),
-    
-    # Fraction of years present
-    percent_years_present = n_distinct(year[presence==1]) / n_distinct(year) * 100
-  ) %>%
-  mutate(
-    # Categorize species by range edges  
-    range_edge_category = case_when(
-      present_above_north & present_within_buffer & !present_below_south ~ "Southern Range Edge",
-      !present_above_north & present_within_buffer & present_below_south ~ "Northern Range Edge",
-      present_above_north & present_within_buffer & present_below_south ~ "Continuous Presence",
-      present_above_north & !present_within_buffer & present_below_south ~ "Avoidant Presence",
-      !present_above_north & !present_within_buffer & present_below_south ~ "Southern Only Presence",      
-      present_above_north & !present_within_buffer & !present_below_south ~ "Northern Only Presence",
-      !present_above_north & present_within_buffer & !present_below_south ~ "Dangermond Endemic Presence",
-      TRUE ~ "Absent Presence"
-      )
-  )
+        group_by(species_lump) %>%
+        summarize(
+            present_below_south = any(latitude < south_lat & presence == 1),
+            present_within_buffer = any(latitude >= south_lat & latitude <= north_lat & presence == 1),
+            present_above_north = any(latitude > north_lat & presence == 1),
+
+            # Observations where Present
+            present_observations_site = sum(latitude >= south_lat & latitude <= north_lat & presence == 1, na.rm = TRUE),
+
+            # Observations Present/Absence
+            total_observations = n(),
+
+            # Distinct sites within buffer
+            sites_in_buffer = n_distinct(marine_site_name[latitude >= south_lat & latitude <= north_lat]),
+
+            # Distinct sites where species are present within buffer
+            sites_present = n_distinct(marine_site_name[latitude >= south_lat & latitude <= north_lat & presence == 1]),
+
+            # Total sites
+            total_sites = n_distinct(marine_site_name),
+
+            # Total Counts
+            total_counts = sum(num_count, na.rm = TRUE),
+
+            # Fraction of years present
+            percent_years_present = n_distinct(year[latitude >= south_lat & latitude <= north_lat & presence == 1]) / 
+                                    n_distinct(year) * 100
+        ) %>%
+        mutate(
+            # Categorize species by range edges
+            range_edge_category = case_when(
+                present_above_north & present_within_buffer & !present_below_south ~ "Southern Range Edge",
+                !present_above_north & present_within_buffer & present_below_south ~ "Northern Range Edge",
+                present_above_north & present_within_buffer & present_below_south ~ "Continuous Presence",
+                present_above_north & !present_within_buffer & present_below_south ~ "Avoidant",
+                !present_above_north & !present_within_buffer & present_below_south ~ "Southern Only Presence",
+                present_above_north & !present_within_buffer & !present_below_south ~ "Northern Only Presence",
+                !present_above_north & present_within_buffer & !present_below_south ~ "Endemic Presence",
+                TRUE ~ "Absent"
+            )
+        )
 }
 ```
 
@@ -468,26 +517,64 @@ if(st_crs(coastline) == st_crs(biodiv_geo)) {
 ```
 
 ```{r}
+CA_coastline_shp <- read_sf(here('data', 'coastal_spatial_data',
+                                 'coast.line.CA.shp')) #%>%
+    #st_transform(crs=biodiv_geo)
+
+tm_shape(CA_coastline_shp) +
+  tm_lines(col = "#000000") + # land color 
 tm_shape(california) +
   tm_polygons(col = "#bae4b3") + # land color 
 tm_shape(dangermond) +
   tm_polygons(col = "orange") +
+tm_shape(biodiv_geo) +
+    tm_symbols(col = "blue", size = 0.05, shape = 20) + # Add buffer lines
 tm_shape(coastline) +
-    tm_dots(col = "red", size = 0.1)
+    tm_symbols(col = "red", size = 0.1, shape = 4) +
+tm_add_legend(type = "symbol",  
+              labels = c("MARINe Site", "100km chunk") , 
+              col = c("blue", "red"),
+              shape = c(20, 4)) + 
+tm_scale_bar(position = c(0.02, 0.02), width = 0.2) + # scale bar
+tm_compass(position = c(0.01, 0.08), text.size = 0.8) + # compass
+tm_layout(bg.color = "gray82", # background ocean color 
+          main.title = "MARINe sites in California",
+          fontfamily = "serif",
+          legend.position = c("right", "top"),
+          legend.frame = FALSE)
 ```
 
 ```{r}
-CA_coastline_shp <- read_sf(here('data', 'coastal_spatial_data',
-                                 'coast.line.CA.shp')) %>%
-    st_transform(crs=biodiv_geo)
-
 tm_shape(CA_coastline_shp) +
-  tm_lines(col = "#bae4b3") + # land color 
-tm_shape(dangermond) +
-  tm_polygons(col = "orange") +
-tm_shape(coastline) +
-    tm_dots(col = "red", size = 0.1) +
-tm_shape(biodiv_geo) +
-    tm_dots(col = "blue", size = 0.1) 
+  tm_lines(col = "#bae4b3")
+```
+
+```{r}
+
+# Define a polygon that will cut off SF Bay
+golden_gate_line <- st_linestring(matrix(c(-122.513, 37.826,  # Marin Headlands
+                                           -122.477, 37.807), # San Francisco Side
+                                         ncol = 2, byrow = TRUE)) %>%
+  st_sfc(crs = st_crs(coastline)) %>%
+  st_buffer(0.01)
+
+# Define SF Bay bounding box (approximate)
+sf_bay_bbox <- st_bbox(c(xmin =  -121, xmax = -122.513, 
+                          ymin = 37.807, ymax = 37.826), 
+                        crs = st_crs(CA_coastline_shp)) %>%
+  st_as_sfc()
+
+# Remove the SF Bay portion from the coastline
+coastline_trimmed <- st_difference(CA_coastline_shp, sf_bay_bbox)
+
+# Plot the modified coastline
+tm_shape(CA_coastline_shp, bbox = sf_bay_bbox) + 
+    tm_lines() +
+tm_shape(sf_bay_bbox) +
+    tm_borders(col = "red") +
+tm_shape(golden_gate_line) +
+    tm_borders()
+
+
 ```
 
