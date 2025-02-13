@@ -1,0 +1,63 @@
+---
+title: "Range Summary Map"
+format: html
+---
+
+## Import Data
+
+```{r}
+# Load packages 
+library(tidyverse)
+library(here)
+library(readxl)
+library(spData)
+library(sf)
+library(tmap)
+library(units)
+library(geosphere)
+```
+
+```{r}
+
+
+# Read in Dangermond preserve shape file 
+dangermond <- read_sf(here('data', 'dangermond_shapefile', 'jldp_boundary.shp'))
+CA_coastline_shp <- read_sf(here('data', 'coastal_spatial_data',
+                                 'coast.line.CA.shp'))
+# Read in California state boundary 
+california <- spData::us_states %>% 
+  filter(NAME == "California")
+
+biodiv_geo_segments <- read_csv(here("data/biodiv_geo_segments.csv")) %>% 
+    st_as_sf(coords = c("longitude", "latitude"), crs = st_crs(CA_coastline_shp), remove = FALSE) %>%
+    separate(segment_id, c("drop", "segment_id"), ",") %>% 
+    select(!drop)
+
+coastline_segments <- read_csv(here::here("data", "coastal_spatial_data",
+                                 "coast.CA.100km.chunks.csv")) %>% 
+    rename(lat = Y, long = X) %>% 
+    st_as_sf(coords = c("long", "lat"), crs = st_crs(dangermond), remove = FALSE) %>% 
+    mutate(segment_id = 1:nrow(.))
+```
+
+```{r}
+tm_shape(california) +
+  tm_polygons(col = "#bae4b3") + # land color 
+tm_shape(dangermond) +
+  tm_polygons(col = "orange") +
+# tm_shape(biodiv_geo_segments) +
+#     tm_dots(col = "segment_id", size = 0.05) + # Add buffer lines
+tm_shape(coastline_segments) +
+    tm_symbols(col = "red", size = 0.3, shape = 4) +
+# tm_add_legend(type = "symbol",  
+#               labels = c("MARINe Site", "100km chunk", "Dangermond Preserve") , 
+#               col = c("blue", "red", "orange"),
+#               shape = c(20, 4, 22)) + 
+tm_scale_bar(position = c(0.02, 0.02), width = 0.2) + # scale bar
+tm_compass(position = c(0.01, 0.08), text.size = 0.8) + # compass
+tm_layout(bg.color = "#daf0ff", # background ocean color 
+          main.title = "MARINe sites in California",
+          fontfamily = "serif",
+          legend.position = c("right", "top"),
+          legend.frame = FALSE)
+```

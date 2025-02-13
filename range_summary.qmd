@@ -1,0 +1,157 @@
+---
+title: "Range Summary Table"
+format: html
+---
+
+## Import Data
+
+```{r}
+# Load packages 
+library(tidyverse)
+library(here)
+library(readxl)
+library(spData)
+library(sf)
+library(tmap)
+library(units)
+library(geosphere)
+```
+
+## Data
+
+```{r}
+# Read in three excel files from MARINe biodiversity data 
+point_contact_raw <- read_excel(here('data', 'MARINe_biodiversity_data',
+                                     'cbs_data_CA_2023.xlsx'), sheet = 'point_contact_summary_data')
+quadrat_raw <- read_excel(here('data', 'MARINe_biodiversity_data',
+                               'cbs_data_CA_2023.xlsx'), sheet = 'quadrat_summary_data')
+swath_raw <- read_excel(here('data', 'MARINe_biodiversity_data',
+                             'cbs_data_CA_2023.xlsx'), sheet = 'swath_summary_data')
+
+# Read in Dangermond preserve shape file 
+dangermond <- read_sf(here('data', 'dangermond_shapefile', 'jldp_boundary.shp'))
+CA_coastline_shp <- read_sf(here('data', 'coastal_spatial_data',
+                                 'coast.line.CA.shp'))
+# Read in California state boundary 
+california <- spData::us_states %>% 
+  filter(NAME == "California")
+
+# Add southern and northern bounds of california
+coastline_segments <- read_csv(here::here("data", "coastal_spatial_data",
+                                 "coast.CA.100km.chunks.csv")) %>% 
+    rename(lat = Y, long = X) %>% 
+    st_as_sf(coords = c("long", "lat"), crs = st_crs(dangermond), remove = FALSE) %>% 
+    mutate(segment_id = 1:nrow(.))
+```
+
+## Data Cleaning
+
+```{r}
+# Clean point_contact dataset 
+point_contact_clean <- point_contact_raw %>% 
+  # Remove non-matching columns 
+  select(!c('number_of_transect_locations', 'percent_cover')) %>% 
+  # Rename num of hits to total count 
+  rename(total_count = number_of_hits) %>% 
+  # Create new data collection source column 
+  mutate(collection_source = "point contact") %>% 
+  # Filter to mainland only 
+  filter(island == "Mainland") %>% 
+  # Remove certain species lumps 
+  filter(!species_lump %in% c("Rock", "Sand", "Tar", "Blue Green Algae", "Red Crust", "Diatom", "Ceramiales"))
+
+# Clean quadrat dataset 
+quadrat_clean <- quadrat_raw %>% 
+  # Remove non-matching columns 
+  select(!c('number_of_quadrats_sampled', 'total_area_sampled_m2', 'density_per_m2')) %>% 
+  # Create new data collection source column 
+  mutate(collection_source = "quadrat") %>% 
+  # Filter to mainland only 
+  filter(island == "Mainland") %>% 
+  # Remove certain species lumps 
+  filter(!species_lump %in% c("Rock", "Sand", "Tar", "Blue Green Algae", "Red Crust", "Diatom", "Ceramiales"))
+
+# Clean swath dataset 
+swath_clean <- swath_raw %>% 
+  # Remove non-matching columns 
+  select(!c('number_of_transects_sampled', 'est_swath_area_searched_m2',  'density_per_m2')) %>% 
+  # Create new data collection source column 
+  mutate(collection_source = "swath") %>% 
+  # Filter to mainland only 
+  filter(island == "Mainland") %>% 
+  # Remove certain species lumps 
+  filter(!species_lump %in% c("Rock", "Sand", "Tar", "Blue Green Algae", "Red Crust", "Diatom", "Ceramiales"))
+```
+
+```{r}
+# Merge datasets
+biodiv_merge <- bind_rows(point_contact_clean, quadrat_clean, swath_clean)
+```
+
+```{r}
+# Group by site and species
+biodiv_total <- biodiv_merge %>% 
+  group_by(marine_site_name, latitude, longitude, species_lump, year) %>% 
+  summarise(num_count = sum(total_count), .groups = 'drop') %>% 
+  mutate(presence = ifelse(num_count >= 1, 1, 0))
+```
+
+#### Convert biodiv data to sf object
+
+```{r}
+biodiv_geo <- biodiv_total %>% 
+  st_as_sf(coords = c("longitude", "latitude"), crs = st_crs(CA_coastline_shp), remove = FALSE)
+
+# Check that the crs matches 
+if(st_crs(CA_coastline_shp) == st_crs(biodiv_geo)) {
+  print("The coordinate reference systems match")
+} else {
+  print("The coordinate reference systems do NOT match. Transformation of CRS is recommended.")
+}
+
+```
+```{r}
+
+# 5. Create LineSegments from coastal points in the CA coastline
+# Assuming 'CA_coastline_shp' has 'geometry' column as coordinates (longitude, latitude)
+
+# Create a LineString from each consecutive pair of points along the coastline
+coastline_coords <- st_coordinates(CA_coastline_shp)
+line_segments <- list()
+
+for (i in 1:(nrow(coastline_coords) - 1)) {
+  line_segments[[i]] <- st_sfc(st_linestring(matrix(c(coastline_coords[i, 1], coastline_coords[i, 2], 
+                                                     coastline_coords[i + 1, 1], coastline_coords[i + 1, 2]), 
+                                                   ncol = 2, byrow = TRUE)), crs = st_crs(CA_coastline_shp))
+}
+
+# Convert list of line segments into an sf object
+line_segments_sf <- st_sf(geometry = do.call(c, line_segments))
+
+# 6. Create a spatial index for the line segments
+line_segments_sf_indexed <- st_as_sf(line_segments_sf)  # Just to ensure it's in sf format
+st_is_valid(line_segments_sf_indexed)  # Ensure all geometries are valid
+
+# 7. Use st_intersects to find the marine sites lying within the line segments
+# Spatial query: Find the closest segment that intersects with each marine site
+biodiv_geo$segment_id <- NA  # Initialize segment_id for marine sites
+
+# 8. Efficient intersection check using spatial operations
+for (i in 1:nrow(biodiv_geo)) {
+  marine_site <- biodiv_geo[i, , drop = FALSE]  # Single marine site
+  # Check which line segments the marine site intersects with
+  intersects <- st_intersects(marine_site, line_segments_sf, sparse = FALSE)
+  
+  if (any(intersects)) {
+    biodiv_geo$segment_id[i] <- which(intersects)[1]  # Assign the first segment that intersects
+  }
+}
+
+# 9. Save the results with the new segment_id
+write.csv(biodiv_geo, "biodiv_geo_segments.csv", row.names = FALSE)
+
+# 10. (Optional) View the updated marine_sites data
+head(biodiv_geo)
+
+```
+
