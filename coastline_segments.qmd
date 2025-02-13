@@ -1,0 +1,40 @@
+---
+title: "Coastline Chunks"
+format: html
+---
+
+```{r}
+# 1. Load necessary libraries
+library(sf)
+library(dplyr)
+library(units)
+library(lwgeom)
+library(ggplot2)
+
+# 2. Load the coastline shapefile
+ca_coastline <- st_read(here::here("data", "coastal_spatial_data", "coast.line.CA",
+                                 "coast.line.CA.shp")) 
+```
+
+```{r}
+st_line_sample(ca_coastline, n=10)
+```
+
+
+```{r}
+ca_coastline_segmented <- st_segmentize(ca_coastline, set_units(100, km))
+```
+
+
+```{r}
+ca_coastline_segmented %>% 
+  ggplot() +
+  geom_sf()
+```
+
+
+```{r}
+tm_shape(ca_coastline_segmented) + 
+    tm_lines() 
+```
+
