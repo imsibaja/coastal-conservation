@@ -521,23 +521,21 @@ CA_coastline_shp <- read_sf(here('data', 'coastal_spatial_data',
                                  'coast.line.CA.shp')) #%>%
     #st_transform(crs=biodiv_geo)
 
-tm_shape(CA_coastline_shp) +
-  tm_lines(col = "#000000") + # land color 
-tm_shape(california) +
+tm_shape(california, bbox = bbox_sb ) +
   tm_polygons(col = "#bae4b3") + # land color 
 tm_shape(dangermond) +
   tm_polygons(col = "orange") +
 tm_shape(biodiv_geo) +
     tm_symbols(col = "blue", size = 0.05, shape = 20) + # Add buffer lines
 tm_shape(coastline) +
-    tm_symbols(col = "red", size = 0.1, shape = 4) +
+    tm_symbols(col = "red", size = 0.3, shape = 4) +
 tm_add_legend(type = "symbol",  
-              labels = c("MARINe Site", "100km chunk") , 
-              col = c("blue", "red"),
-              shape = c(20, 4)) + 
+              labels = c("MARINe Site", "100km chunk", "Dangermond Preserve") , 
+              col = c("blue", "red", "orange"),
+              shape = c(20, 4, 22)) + 
 tm_scale_bar(position = c(0.02, 0.02), width = 0.2) + # scale bar
 tm_compass(position = c(0.01, 0.08), text.size = 0.8) + # compass
-tm_layout(bg.color = "gray82", # background ocean color 
+tm_layout(bg.color = "#daf0ff", # background ocean color 
           main.title = "MARINe sites in California",
           fontfamily = "serif",
           legend.position = c("right", "top"),
