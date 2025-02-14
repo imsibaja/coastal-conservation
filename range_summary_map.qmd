@@ -23,7 +23,7 @@ library(geosphere)
 # Read in Dangermond preserve shape file 
 dangermond <- read_sf(here('data', 'dangermond_shapefile', 'jldp_boundary.shp'))
 CA_coastline_shp <- read_sf(here('data', 'coastal_spatial_data',
-                                 'coast.line.CA.shp'))
+                                 'coast.line.CA', 'coast.line.CA.shp'))
 # Read in California state boundary 
 california <- spData::us_states %>% 
   filter(NAME == "California")
@@ -34,14 +34,14 @@ biodiv_geo_segments <- read_csv(here("data/biodiv_geo_segments.csv")) %>%
     select(!drop)
 
 coastline_segments <- read_csv(here::here("data", "coastal_spatial_data",
-                                 "coast.CA.100km.chunks.csv")) %>% 
+                                 'coast.line.CA_erica', "coast.CA.100km.chunks.csv")) %>% 
     rename(lat = Y, long = X) %>% 
     st_as_sf(coords = c("long", "lat"), crs = st_crs(dangermond), remove = FALSE) %>% 
     mutate(segment_id = 1:nrow(.))
 ```
 
 ```{r}
-tm_shape(california) +
+tm_shape(california, bbox = ) +
   tm_polygons(col = "#bae4b3") + # land color 
 tm_shape(dangermond) +
   tm_polygons(col = "orange") +

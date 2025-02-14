@@ -15,6 +15,10 @@ library(ggplot2)
 ca_coastline <- st_read(here::here("data", "coastal_spatial_data", "coast.line.CA",
                                  "coast.line.CA.shp")) 
 ```
+```{r}
+tm_shape(ca_coastline) +
+    tm_lines()
+```
 
 ```{r}
 st_line_sample(ca_coastline, n=10)
