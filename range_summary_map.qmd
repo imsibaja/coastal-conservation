@@ -13,13 +13,9 @@ library(readxl)
 library(spData)
 library(sf)
 library(tmap)
-library(units)
-library(geosphere)
 ```
 
 ```{r}
-
-
 # Read in Dangermond preserve shape file 
 dangermond <- read_sf(here('data', 'dangermond_shapefile', 'jldp_boundary.shp'))
 CA_coastline_shp <- read_sf(here('data', 'coastal_spatial_data',
@@ -28,31 +24,181 @@ CA_coastline_shp <- read_sf(here('data', 'coastal_spatial_data',
 california <- spData::us_states %>% 
   filter(NAME == "California")
 
-biodiv_geo_segments <- read_csv(here("data/biodiv_geo_segments.csv")) %>% 
-    st_as_sf(coords = c("longitude", "latitude"), crs = st_crs(CA_coastline_shp), remove = FALSE) %>%
-    separate(segment_id, c("drop", "segment_id"), ",") %>% 
-    select(!drop)
-
 coastline_segments <- read_csv(here::here("data", "coastal_spatial_data",
-                                 'coast.line.CA_erica', "coast.CA.100km.chunks.csv")) %>% 
-    rename(lat = Y, long = X) %>% 
+                                 "CA_coast_segments.csv"), show_col_types = FALSE) %>% 
+    rename(lat = POINT_Y, long = POINT_X) %>% 
     st_as_sf(coords = c("long", "lat"), crs = st_crs(dangermond), remove = FALSE) %>% 
     mutate(segment_id = 1:nrow(.))
 ```
 
 ```{r}
-tm_shape(california, bbox = ) +
-  tm_polygons(col = "#bae4b3") + # land color 
+# Read in three excel files from MARINe biodiversity data 
+point_contact_raw <- read_excel(here('data', 'MARINe_biodiversity_data',
+                                     'cbs_data_CA_2023.xlsx'), sheet = 'point_contact_summary_data')
+quadrat_raw <- read_excel(here('data', 'MARINe_biodiversity_data',
+                               'cbs_data_CA_2023.xlsx'), sheet = 'quadrat_summary_data')
+swath_raw <- read_excel(here('data', 'MARINe_biodiversity_data',
+                             'cbs_data_CA_2023.xlsx'), sheet = 'swath_summary_data')
+```
+
+
+## Data Cleaning
+
+```{r}
+# Clean point_contact dataset 
+point_contact_clean <- point_contact_raw %>% 
+  # Remove non-matching columns 
+  select(!c('number_of_transect_locations', 'percent_cover')) %>% 
+  # Rename num of hits to total count 
+  rename(total_count = number_of_hits) %>% 
+  # Create new data collection source column 
+  mutate(collection_source = "point contact") %>% 
+  # Filter to mainland only 
+  filter(island == "Mainland") %>% 
+  # Remove certain species lumps 
+  filter(!species_lump %in% c("Rock", "Sand", "Tar", "Blue Green Algae", "Red Crust", "Diatom", "Ceramiales"))
+
+# Clean quadrat dataset 
+quadrat_clean <- quadrat_raw %>% 
+  # Remove non-matching columns 
+  select(!c('number_of_quadrats_sampled', 'total_area_sampled_m2', 'density_per_m2')) %>% 
+  # Create new data collection source column 
+  mutate(collection_source = "quadrat") %>% 
+  # Filter to mainland only 
+  filter(island == "Mainland") %>% 
+  # Remove certain species lumps 
+  filter(!species_lump %in% c("Rock", "Sand", "Tar", "Blue Green Algae", "Red Crust", "Diatom", "Ceramiales"))
+
+# Clean swath dataset 
+swath_clean <- swath_raw %>% 
+  # Remove non-matching columns 
+  select(!c('number_of_transects_sampled', 'est_swath_area_searched_m2',  'density_per_m2')) %>% 
+  # Create new data collection source column 
+  mutate(collection_source = "swath") %>% 
+  # Filter to mainland only 
+  filter(island == "Mainland") %>% 
+  # Remove certain species lumps 
+  filter(!species_lump %in% c("Rock", "Sand", "Tar", "Blue Green Algae", "Red Crust", "Diatom", "Ceramiales"))
+```
+
+#### Merge datasets
+
+Since all three datasets have the same columns, I will merge the datasets into one using the dpylr function `bind_rows`
+
+```{r}
+# Merge the 3 dataset together 
+biodiv_merge <- bind_rows(point_contact_clean, quadrat_clean, swath_clean)
+```
+```{r}
+# Group by site and species (no year)
+biodiv_total <- biodiv_merge %>% 
+  group_by(marine_site_name, latitude, longitude, species_lump, year) %>% 
+  summarise(num_count = sum(total_count)) %>% 
+  mutate(presence = ifelse(num_count >= 1, 1, 0))
+```
+
+
+## Range function
+
+The problem with only using latitude is that we do not follow the coastline... need to take a look at that.
+```{r}
+species_range <- function(south_lat, north_lat) {
+    biodiv_total %>%
+        group_by(species_lump) %>%
+        summarize(
+            present_below_south = any(latitude < south_lat & presence == 1),
+            present_within_buffer = any(latitude >= south_lat & latitude <= north_lat & presence == 1),
+            present_above_north = any(latitude > north_lat & presence == 1),
+
+            # Observations where Present
+            present_observations_site = sum(latitude >= south_lat & latitude <= north_lat & presence == 1, na.rm = TRUE),
+
+            # Observations Present/Absence
+            total_observations = n(),
+
+            # Distinct sites within buffer
+            sites_in_buffer = n_distinct(marine_site_name[latitude >= south_lat & latitude <= north_lat]),
+
+            # Distinct sites where species are present within buffer
+            sites_present = n_distinct(marine_site_name[latitude >= south_lat & latitude <= north_lat & presence == 1]),
+
+            # Total sites
+            total_sites = n_distinct(marine_site_name),
+
+            # Total Counts
+            total_counts = sum(num_count, na.rm = TRUE),
+
+            # Fraction of years present
+            percent_years_present = n_distinct(year[latitude >= south_lat & latitude <= north_lat & presence == 1]) / 
+                                    n_distinct(year) * 100
+        ) %>%
+        mutate(
+            # Categorize species by range edges
+            range_edge_category = case_when(
+                present_above_north & present_within_buffer & !present_below_south ~ "Southern Range Edge",
+                !present_above_north & present_within_buffer & present_below_south ~ "Northern Range Edge",
+                present_above_north & present_within_buffer & present_below_south ~ "Continuous Presence",
+                present_above_north & !present_within_buffer & present_below_south ~ "Avoidant",
+                !present_above_north & !present_within_buffer & present_below_south ~ "Southern Only Presence",
+                present_above_north & !present_within_buffer & !present_below_south ~ "Northern Only Presence",
+                !present_above_north & present_within_buffer & !present_below_south ~ "Endemic Presence",
+                TRUE ~ "Absent"
+            )
+        )
+}
+```
+
+```{r}
+coastline_lat <- coastline_segments$lat %>% sort(decreasing = FALSE)
+
+range_list <-  NULL
+
+# create dataframe of each latitude range
+for (i in 1:(length(coastline_lat)-1)){
+   current_range_df <- species_range(coastline_lat[i],  
+                                     coastline_lat[i + 1])
+   current_range_df$range_lat <- paste(round(coastline_lat[i], digits=2),
+                                       round(coastline_lat[i + 1], digits=2),
+                                       sep = "-")
+   current_range_df$id <- i
+   
+   range_list <- rbind(range_list, current_range_df)
+}
+```
+
+```{r}
+marine_sites <- biodiv_total %>% 
+    st_as_sf(coords = c("longitude", "latitude"), crs = st_crs(california), remove = FALSE) %>%
+    group_by(marine_site_name) %>%
+    summarize(lat = mean(latitude), long = mean(longitude))
+
+marine_sites$segment_id <- NA  # Initialize segment_id for marine sites
+
+# Loop through sites and coastline segments
+for (i in 1:nrow(marine_sites)) {
+    for (j in 1:(nrow(coastline_segments) - 1)) {  # Prevent j+1 from going out of bounds
+        if (!is.na(marine_sites$lat[i]) && 
+            between(marine_sites$lat[i], min(coastline_segments$lat[j], coastline_segments$lat[j+1]), 
+                     max(coastline_segments$lat[j], coastline_segments$lat[j+1])
+                    )) {
+            marine_sites$segment_id[i] <- coastline_segments$segment_id[j]
+            break  # Stop checking once a match is found
+        }
+    }
+}
+```
+
+## Plot
+
+```{r}
+tm_shape(california) +
+  tm_polygons(col = "#bae4b3") + # land color
 tm_shape(dangermond) +
   tm_polygons(col = "orange") +
-# tm_shape(biodiv_geo_segments) +
-#     tm_dots(col = "segment_id", size = 0.05) + # Add buffer lines
+tm_shape(marine_sites) +
+    tm_symbols(shape = 20, col = "segment_id", size = 0.05) + # Add buffer lines
 tm_shape(coastline_segments) +
-    tm_symbols(col = "red", size = 0.3, shape = 4) +
-# tm_add_legend(type = "symbol",  
-#               labels = c("MARINe Site", "100km chunk", "Dangermond Preserve") , 
-#               col = c("blue", "red", "orange"),
-#               shape = c(20, 4, 22)) + 
+    tm_symbols(shape = 4, size = 1, col = "red") + # Add coastline segments
 tm_scale_bar(position = c(0.02, 0.02), width = 0.2) + # scale bar
 tm_compass(position = c(0.01, 0.08), text.size = 0.8) + # compass
 tm_layout(bg.color = "#daf0ff", # background ocean color 
