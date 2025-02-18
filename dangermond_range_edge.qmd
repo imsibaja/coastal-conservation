@@ -1,0 +1,33 @@
+---
+title: "Dangermond Range Edges"
+format: html
+---
+
+spp range edge in Dangermond
+
+```{r}
+# Load packages 
+library(tidyverse)
+library(here)
+library(readxl)
+library(spData)
+library(sf)
+library(tmap)
+```
+
+```{r}
+# Load data
+range_edges <- read_csv(here("data", "range_list.csv"))
+```
+
+```{r}
+# Pull species with range edges in Dangermond
+dangermond_range_edges <- range_edges %>%
+  filter(id  %in%  c(5,6)) %>% 
+    filter(range_edge_category  %in% c("Northern Range Edge", "Southern Range Edge", "Endemic Presence"))
+```
+
+```{r}
+dangermond_range_edges$species_lump
+```
+

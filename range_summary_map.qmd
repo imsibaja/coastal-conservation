@@ -188,6 +188,14 @@ for (i in 1:nrow(marine_sites)) {
 }
 ```
 
+
+Write Marine Sites and Range Edges to CSV
+```{r}
+write.csv(marine_sites, "marine_sites_id.csv", row.names = FALSE)
+write.csv(range_list, "range_list.csv", row.names = FALSE)
+```
+
+
 ## Plot
 
 ```{r}
