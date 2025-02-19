@@ -9,10 +9,10 @@ spp range edge in Dangermond
 # Load packages 
 library(tidyverse)
 library(here)
-library(readxl)
 library(spData)
 library(sf)
 library(tmap)
+library(kableExtra)
 ```
 
 ```{r}
@@ -24,10 +24,36 @@ range_edges <- read_csv(here("data", "range_list.csv"))
 # Pull species with range edges in Dangermond
 dangermond_range_edges <- range_edges %>%
   filter(id  %in%  c(5,6)) %>% 
-    filter(range_edge_category  %in% c("Northern Range Edge", "Southern Range Edge", "Endemic Presence"))
+    #filter(range_edge_category  %in% c("Northern Range Edge", "Southern Range Edge", "Endemic Presence"))
+    filter(range_edge_category == "Northern Range Edge") %>% 
+    select(id, species_lump, total_counts, percent_years_present) %>% 
+    arrange(desc(id)) %>%
+    mutate( id = case_when(
+      id == 5 ~ "Southern Dangermond",
+      id == 6 ~ "Northern Dangermond",
+      TRUE ~ "Other"
+    )) %>% 
+    mutate(percent_years_present = round(percent_years_present, digits=2)) %>% 
+    filter(total_counts>10)
 ```
 
 ```{r}
-dangermond_range_edges$species_lump
+dangermond_range_edges %>% 
+  kbl(col.names = c("Region", "Species", "Total Counts", "Percent Years Present")) %>% 
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover")) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "#0077BE") %>%  # Header: Deep Ocean Blue
+  column_spec(1, bold = TRUE, color = "#005f73") %>%  # Site Name: Darker Blue-Green
+  column_spec(2, color = "#0a9396", bold = T) %>%  # Species Name: Teal
+  column_spec(3:4, color = "#94d2bd", background = "#0077BE", bold = T) %>%  # Count & Year: Light Aqua
+  add_header_above(c("Dangermond Species with Northern Range Edges" = 4),
+                   background = "#003049", color = "white") %>%
+  footnote(general = "Data from MARINe (2000-2023)", 
+           general_title = "Note:", 
+           footnote_as_chunk = TRUE) 
+```
+```{r}
+dangermond_range_edges <- range_edges %>%
+    filter(id  %in%  c(5,6)) %>% 
+    filter(range_edge_category  %in% c("Northern Range Edge", "Southern Range Edge", "Endemic Presence"))
 ```
 
